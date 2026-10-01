@@ -1,0 +1,6 @@
+# The built mod is game input: the engine reads CRLF files byte by byte, so git
+# must never convert line endings in it, on any platform or core.autocrlf setting.
+dist/** -text
+
+# Vendored sources stay byte-identical to the copy whose sha256 their NOTICE records.
+tools/vendor/** -text

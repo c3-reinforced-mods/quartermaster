@@ -1,0 +1,43 @@
+tools/vendor/gscript.py
+=======================
+
+Origin: `tools/c3kit/formats/gscript.py` of the c3kit modding toolkit, part of the
+tooling of the Cossacks 3 mod "Star Wars: Frontline Protocol" by the same author,
+copied on 2026-09-28 from the installed copy of that mod
+(source sha256 7184349e8000bcf36929ac78425cf5d4f556db6e9700339e2d07d18283fe5ff9,
+39223 bytes). It is vendored so that this repository builds on a machine that
+does not have that mod installed; `tools/hbuild.py` imports only this copy.
+
+Modified: four comment/docstring phrases that cited the source project's own
+rule numbers were reworded or dropped (module docstring lines 3 and 47-48, the
+docstring of `natives()` line 157, the docstring of `balance()` line 587). No
+code line was changed. Vendored copy sha256
+6ee224635a043c0508c79d7791f4cfbac38a85392638ea1a74b76cc6d3298403, 39154 bytes.
+
+Other references inside the file (`verify.py`, `tools/checks/gscript_check.py`,
+`swfp.bytes_ops`, "conventions B8") point into the source project and are kept
+as they were written; they explain where each rule was measured.
+
+
+MIT License
+===========
+
+Copyright (c) 2026 pjugowiec
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

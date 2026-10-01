@@ -1,0 +1,16 @@
+# Python bytecode and tool caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Fixture mods are rebuilt from the installed game's own files by
+# tools/fixtures.py, so they carry GSC's data and are never tracked.
+/fixtures/
+
+# The built mod: tools/hbuild.py writes it from src/ and the installed game.
+# It carries GSC's files (the game's resource.script in front of the guard,
+# the hook files merged into the game's own .inc), so it is never tracked
+# either; it is published through the game's Mod Manager, not from here.
+/dist/
