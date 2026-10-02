@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
 
 # Fixture mods are rebuilt from the installed game's own files by
 # tools/fixtures.py, so they carry GSC's data and are never tracked.

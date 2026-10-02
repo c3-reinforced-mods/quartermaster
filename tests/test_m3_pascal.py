@@ -22,6 +22,8 @@ it, so a helper written in more of the dialect does not break the suite; a
 wrong result always fails.
 """
 import gc
+import operator
+import os
 import re
 import struct
 
@@ -33,6 +35,14 @@ from ref import inc as I
 from ref import merge as M
 
 MASK = 0xFFFFFFFF
+
+#: Statement coverage of the emitted code, recorded when QM_PASCOV names a
+#: folder (tools/pascov.py reports it): {source text: (the lines a statement
+#: starts on, the lines whose statement ran)}. Only statements that do
+#: something count; a declaration or a begin/end runs whenever its block does.
+PASCOV = os.environ.get("QM_PASCOV")
+COUNTED = ("assign", "call", "if", "while", "for", "exit")
+COVERAGE = {}
 
 
 def wrap(x):
@@ -67,9 +77,11 @@ _TOKEN = re.compile(r"""
 """, re.X)
 
 
-def lex(text):
+def lex(text, lines=None):
+    """The tokens of `text`; `lines`, when given, gets each token's line number."""
     out = []
     pos = 0
+    line = 1
     while pos < len(text):
         m = _TOKEN.match(text, pos)
         if not m:
@@ -77,7 +89,10 @@ def lex(text):
         pos = m.end()
         kind, value = m.lastgroup, m.group()
         if kind in ("ws", "com", "bcom"):
+            line += value.count("\n")
             continue
+        if lines is not None:
+            lines.append(line)
         if kind == "str":
             out.append(("str", value[1:-1].replace("''", "'").encode("latin-1")))
         elif kind == "chr":
@@ -91,6 +106,8 @@ def lex(text):
         else:
             out.append(("op", value))
     out.append(("eof", None))
+    if lines is not None:
+        lines.append(line)
     return out
 
 
@@ -98,9 +115,11 @@ def lex(text):
 class Parser(object):
     """Recursive descent over the statements the states use."""
 
-    def __init__(self, tokens):
+    def __init__(self, tokens, lines=None, marks=None):
         self.t = tokens
         self.i = 0
+        self.lines = lines
+        self.marks = marks
 
     def peek(self):
         return self.t[self.i]
@@ -198,6 +217,13 @@ class Parser(object):
         return ("block", stmts)
 
     def statement(self):
+        at = self.i
+        node = self._statement()
+        if self.marks is not None and node[0] in COUNTED:
+            self.marks[id(node)] = self.lines[at]
+        return node
+
+    def _statement(self):
         tok = self.peek()
         if tok[0] != "id":
             raise Unsupported("statement near %r" % (self.t[self.i:self.i + 6],))
@@ -387,24 +413,44 @@ def _trunc_div(a, b):
 
 
 class State(object):
-    """One state, parsed once; every run starts with fresh state variables."""
+    """One state, parsed and compiled once; every run starts with fresh state
+    variables.
+
+    The parse tree is compiled into Python closures, one per statement and
+    expression, so a run does not walk the tree and test the kind of each node
+    again: the offline gates spend nearly all their time in here. Each closure
+    takes the Frame it runs in; none holds the engine, so a copy of the State
+    bound to another engine shares them."""
 
     def __init__(self, code_lines, engine):
         self.engine = engine
-        self.items = Parser(lex("\n".join(l.decode("latin-1") for l in code_lines))).program()
-        self.routines = dict((it[1], it) for it in self.items if it[0] == "routine")
+        text = "\n".join(l.decode("latin-1") for l in code_lines)
+        if PASCOV is None:
+            marks = ran = None
+            self.items = Parser(lex(text)).program()
+        else:
+            lines, marks = [], {}
+            self.items = Parser(lex(text, lines), lines, marks).program()
+            ran = COVERAGE.setdefault(text, (set(marks.values()), set()))[1]
+        comp = Compiler(marks, ran)
+        self.routines = {}
+        for it in self.items:
+            if it[0] == "routine":
+                self.routines[it[1]] = comp.routine(it)
+        self.body = [comp.stmt(it) for it in self.items if it[0] != "routine"]
 
     def run(self):
         frame = Frame(self, {}, None)
         try:
-            for it in self.items:
-                if it[0] != "routine":
-                    frame.execute(it)
+            for fn in self.body:
+                fn(frame)
         except _Exit:
             pass
 
 
 class Frame(object):
+    __slots__ = ("state", "g", "l", "natives")
+
     def __init__(self, state, globals_, locals_):
         self.state, self.g, self.l = state, globals_, locals_
         self.natives = state.engine.natives
@@ -414,212 +460,440 @@ class Frame(object):
             return self.l[name]
         return self.g.get(name)
 
-    # tcolor: the engine's colour record (gui.script), opaque here - a native
-    # such as _gui_ConvertHexToTColor fills it and another only passes it on.
-    ZEROS = {"integer": 0, "byte": 0, "string": b"", "boolean": False, "float": 0.0,
-             "tcolor": None}
-
-    def zero(self, t):
-        if t[0] == "array":
-            lo, hi = self.eval(t[1]), self.eval(t[2])
-            if t[3][0] == "name":
-                return Arr(lo, [self.zero(t[3])] * (hi - lo + 1))
-            return Arr(lo, [self.zero(t[3]) for _ in range(hi - lo + 1)])
-        if t[1] not in self.ZEROS:
-            raise Unsupported("type %s" % t[1])
-        return self.ZEROS[t[1]]
-
-    def execute(self, s):
-        k = s[0]
-        if k == "block":
-            for x in s[1]:
-                self.execute(x)
-        elif k == "assign":
-            self.store(s[1], self.eval(s[2]))
-        elif k == "call":
-            t = s[1]
-            if t[0] == "name":
-                self.invoke(t[1], [])
-            elif t[0] == "fcall":
-                self.invoke(t[1], t[2])
-            else:
-                raise Unsupported("call of %r" % (t,))
-        elif k == "if":
-            if self.truth(self.eval(s[1])):
-                self.execute(s[2])
-            elif s[3] is not None:
-                self.execute(s[3])
-        elif k == "while":
-            while self.truth(self.eval(s[1])):
-                self.execute(s[2])
-        elif k == "for":
-            _k, var, a, down, b, stmt = s
-            i, last = self.eval(a), self.eval(b)
-            cell = self.cell(var)
-            if cell is None:
-                raise RunError("loop variable %s is not declared" % var)
-            step = -1 if down else 1
-            while (i >= last) if down else (i <= last):
-                cell.v = i
-                self.execute(stmt)
-                i += step
-        elif k == "var":
-            _k, names, t, init = s
-            scope = self.l if self.l is not None else self.g
-            for n in names:
-                v = self.zero(t) if init is None else self.eval(init)
-                if t == ("name", "float") and isinstance(v, int):
-                    v = float(v)
-                scope[n] = Cell(v)
-        elif k == "const":
-            (self.l if self.l is not None else self.g)[s[1]] = Cell(self.eval(s[2]))
-        elif k == "exit":
-            raise _Exit()
-        else:
-            raise Unsupported(k)
-
-    @staticmethod
-    def truth(v):
-        if not isinstance(v, bool):
-            raise RunError("a condition is not Boolean: %r" % (v,))
-        return v
-
-    def element(self, node):
-        arr, i = self.eval(node[1]), self.eval(node[2])
-        if not isinstance(arr, Arr):
-            raise RunError("index into a non-array")
-        j = i - arr.lo
-        if not 0 <= j < len(arr.data):
-            raise RunError("index %d outside [%d..%d]" % (i, arr.lo, arr.lo + len(arr.data) - 1))
-        return arr, j
-
-    def store(self, target, v):
-        if target[0] == "name":
-            c = self.cell(target[1])
-            if c is None:
-                raise RunError("%s is not declared" % target[1])
-            c.v = float(v) if isinstance(c.v, float) and isinstance(v, int) else v
-        elif target[0] == "index":
-            arr, j = self.element(target)
-            arr.data[j] = v
-        else:
-            raise RunError("cannot assign to %r" % (target,))
-
-    def reference(self, e):
-        if e[0] == "name":
-            c = self.cell(e[1])
-            if c is None:
-                raise RunError("var argument %s is not declared" % e[1])
-            return c
-        if e[0] == "index":
-            return Elem(*self.element(e))
-        raise RunError("a var argument must be a variable: %r" % (e,))
-
-    def _alias_key(self, e):
-        if e[0] == "name":
-            c = self.cell(e[1])
-            return ("c", id(c)) if c is not None else None
-        if e[0] == "index":
-            arr, j = self.element(e)
-            return ("e", id(arr), j)
-        return None
-
-    def invoke(self, name, args):
+    def invoke(self, name, site):
         r = self.state.routines.get(name)
-        if r is None:
-            fn = self.natives.get(name)
-            if fn is None:
-                raise Unsupported("native %s" % name)
-            byref = BYREF_NATIVES.get(name, ())
-            return fn(*[self.reference(a) if k in byref else self.eval(a)
-                        for k, a in enumerate(args)])
-        _r, _n, kind, params, rtype, block = r
-        if len(args) != len(params):
-            raise RunError("%s takes %d arguments, got %d" % (name, len(params), len(args)))
+        if r is not None:
+            return r(self, name, site)
+        fn = self.natives.get(name)
+        if fn is None:
+            raise Unsupported("native %s" % name)
+        byref = BYREF_NATIVES.get(name)
+        if byref:
+            return fn(*[site.refs[k](self) if k in byref else v(self)
+                        for k, v in enumerate(site.vals)])
+        return fn(*[v(self) for v in site.vals])
+
+
+class Site(object):
+    """The arguments of one call, compiled three ways: as values, as var
+    references and as the alias key the var-parameter check compares."""
+    __slots__ = ("nodes", "vals", "refs", "alias")
+
+    def __init__(self, nodes, vals, refs, alias):
+        self.nodes, self.vals, self.refs, self.alias = nodes, vals, refs, alias
+
+
+NO_ARGS = Site((), (), (), ())
+
+ZEROS = {"integer": 0, "byte": 0, "string": b"", "boolean": False, "float": 0.0,
+         "tcolor": None}
+# tcolor: the engine's colour record (gui.script), opaque here - a native
+# such as _gui_ConvertHexToTColor fills it and another only passes it on.
+
+RELATIONS = {"=": operator.eq, "<>": operator.ne, "<": operator.lt, ">": operator.gt,
+             "<=": operator.le, ">=": operator.ge}
+#: Types a relation compares without trying the order first: for anything
+#: else (an array, an opaque colour) the order is tried as the tree-walking
+#: interpreter did, which computed every relation and so failed on `=` too.
+ORDERED = (int, float, bytes, bool)
+
+
+def _truth(v):
+    if not isinstance(v, bool):
+        raise RunError("a condition is not Boolean: %r" % (v,))
+    return v
+
+
+def _arith(op, a, b):
+    """An operator once both sides are known and neither shortcut applied."""
+    if op == "+" and (isinstance(a, bytes) or isinstance(b, bytes)):
+        if not (isinstance(a, bytes) and isinstance(b, bytes)):
+            raise RunError("a String added to a number")
+        return a + b
+    if isinstance(a, float) or isinstance(b, float) or op == "/":
+        if op == "/":
+            return float(a) / float(b)
+        return {"+": a + b, "-": a - b, "*": a * b}[op]
+    if op == "+":
+        return wrap(a + b)
+    if op == "-":
+        return wrap(a - b)
+    if op == "*":
+        return wrap(a * b)
+    if op == "div":
+        return wrap(_trunc_div(a, b))
+    if op == "mod":
+        return wrap(a - b * _trunc_div(a, b))
+    if op == "and":
+        return wrap(a & b)
+    if op == "or":
+        return wrap(a | b)
+    if op == "xor":
+        return wrap(a ^ b)
+    if op == "shl":
+        return wrap(a << (b & 31))
+    if op == "shr":
+        return wrap((a & MASK) >> (b & 31))
+    raise Unsupported(op)
+
+
+def _raiser(exc_type, message):
+    def fail(f):
+        raise exc_type(message)
+    return fail
+
+
+class Compiler(object):
+    """Turns statements and expressions into closures `fn(frame)`. What the
+    interpreter cannot run becomes a closure that raises when it is reached,
+    never an error here: a state is compiled whole, and a test that does not
+    reach the construct must not be skipped for it."""
+
+    def __init__(self, marks, ran):
+        self.marks, self.ran = marks, ran
+
+    # ------------------------------------------------------------ routines
+    def routine(self, it):
+        _r, _name, kind, params, rtype, block = it
+        body = self.stmt(block)
+        zero = self.zero(rtype) if kind == "function" else None
+        names = [p for p, _m, _t in params]
+        modes = [m == "var" for _p, m, _t in params]
+        var_at = [k for k, v in enumerate(modes) if v]
         # One variable passed both by value and as a var parameter: the engine
         # does not keep them apart as this interpreter would - in the game
         # qmLowerAscii(qmAbRid, qmAbRid) turned `qmtestverbase` into
         # `qmtestverbas` (probe runs of 2026-09-29) - so the sources never do it.
         # A String only: that is what came back damaged; the phase A code has
         # passed a Boolean so since M3 and the game ran it right.
-        outs = [self._alias_key(a) for (_p, mode, _t), a in zip(params, args) if mode == "var"]
-        for (pname, mode, ptype), a in zip(params, args):
-            if (mode != "var" and ptype[0] == "name" and ptype[1].lower() == "string"
-                    and self._alias_key(a) is not None and self._alias_key(a) in outs):
-                raise RunError("%s: %s is passed both as a value and as a var parameter"
-                               % (name, a[1] if a[0] == "name" else "an element"))
-        local = {}
-        for (pname, mode, _t), a in zip(params, args):
-            local[pname] = self.reference(a) if mode == "var" else Cell(self.eval(a))
-        if kind == "function":
-            local["result"] = Cell(self.zero(rtype))
-        try:
-            Frame(self.state, self.g, local).execute(block)
-        except _Exit:
-            pass
-        return local["result"].v if kind == "function" else None
+        str_at = [k for k, (_p, m, t) in enumerate(params)
+                  if m != "var" and t[0] == "name" and t[1].lower() == "string"]
+        count = len(params)
 
-    def eval(self, e):
+        def call(f, called, site):
+            if len(site.vals) != count:
+                raise RunError("%s takes %d arguments, got %d"
+                               % (called, count, len(site.vals)))
+            outs = [site.alias[k](f) for k in var_at]
+            for k in str_at:
+                if site.alias[k](f) is not None and site.alias[k](f) in outs:
+                    a = site.nodes[k]
+                    raise RunError("%s: %s is passed both as a value and as a var parameter"
+                                   % (called, a[1] if a[0] == "name" else "an element"))
+            local = {}
+            for k in range(count):
+                local[names[k]] = site.refs[k](f) if modes[k] else Cell(site.vals[k](f))
+            if zero is not None:
+                local["result"] = Cell(zero(f))
+            try:
+                body(Frame(f.state, f.g, local))
+            except _Exit:
+                pass
+            return local["result"].v if zero is not None else None
+        return call
+
+    def zero(self, t):
+        if t[0] == "array":
+            lo, hi, sub = self.expr(t[1]), self.expr(t[2]), self.zero(t[3])
+            if t[3][0] == "name":
+                def z(f):
+                    a, b = lo(f), hi(f)
+                    return Arr(a, [sub(f)] * (b - a + 1))
+            else:
+                def z(f):
+                    a, b = lo(f), hi(f)
+                    return Arr(a, [sub(f) for _ in range(b - a + 1)])
+            return z
+        name = t[1]
+        if name not in ZEROS:
+            return _raiser(Unsupported, "type %s" % name)
+        value = ZEROS[name]
+        return lambda f: value
+
+    # ---------------------------------------------------------- statements
+    def stmt(self, s):
+        fn = self._stmt(s)
+        if self.marks is not None and id(s) in self.marks:
+            line, ran, inner = self.marks[id(s)], self.ran, fn
+
+            def fn(f):
+                ran.add(line)
+                inner(f)
+        return fn
+
+    def _stmt(self, s):
+        k = s[0]
+        if k == "block":
+            fns = tuple(self.stmt(x) for x in s[1])
+            if len(fns) == 1:
+                return fns[0]
+
+            def block(f):
+                for fn in fns:
+                    fn(f)
+            return block
+        if k == "assign":
+            return self.assign(s[1], self.expr(s[2]))
+        if k == "call":
+            t = s[1]
+            if t[0] == "name":
+                name, site = t[1], NO_ARGS
+            elif t[0] == "fcall":
+                name, site = t[1], self.site(t[2])
+            else:
+                return _raiser(Unsupported, "call of %r" % (t,))
+            return lambda f: f.invoke(name, site)
+        if k == "if":
+            cond, yes = self.expr(s[1]), self.stmt(s[2])
+            no = self.stmt(s[3]) if s[3] is not None else None
+
+            def if_(f):
+                v = cond(f)
+                if v is True:
+                    yes(f)
+                elif v is False:
+                    if no is not None:
+                        no(f)
+                else:
+                    _truth(v)
+            return if_
+        if k == "while":
+            cond, body = self.expr(s[1]), self.stmt(s[2])
+
+            def while_(f):
+                while _truth(cond(f)):
+                    body(f)
+            return while_
+        if k == "for":
+            _k, var, a, down, b, stmt = s
+            first, last_, body = self.expr(a), self.expr(b), self.stmt(stmt)
+
+            def for_(f):
+                i, last = first(f), last_(f)
+                cell = f.cell(var)
+                if cell is None:
+                    raise RunError("loop variable %s is not declared" % var)
+                if down:
+                    while i >= last:
+                        cell.v = i
+                        body(f)
+                        i -= 1
+                else:
+                    while i <= last:
+                        cell.v = i
+                        body(f)
+                        i += 1
+            return for_
+        if k == "var":
+            _k, names, t, init = s
+            make = self.zero(t) if init is None else self.expr(init)
+            is_float = t == ("name", "float")
+
+            def var(f):
+                scope = f.l if f.l is not None else f.g
+                for n in names:
+                    v = make(f)
+                    if is_float and isinstance(v, int):
+                        v = float(v)
+                    scope[n] = Cell(v)
+            return var
+        if k == "const":
+            name, value = s[1], self.expr(s[2])
+
+            def const(f):
+                (f.l if f.l is not None else f.g)[name] = Cell(value(f))
+            return const
+        if k == "exit":
+            def exit_(f):
+                raise _Exit()
+            return exit_
+        return _raiser(Unsupported, k)
+
+    def assign(self, target, value):
+        if target[0] == "name":
+            name = target[1]
+
+            def store(f):
+                v = value(f)
+                l = f.l
+                c = l[name] if l is not None and name in l else f.g.get(name)
+                if c is None:
+                    raise RunError("%s is not declared" % name)
+                c.v = float(v) if isinstance(c.v, float) and isinstance(v, int) else v
+            return store
+        if target[0] == "index":
+            element = self.element(target)
+
+            def store_element(f):
+                v = value(f)
+                arr, j = element(f)
+                arr.data[j] = v
+            return store_element
+        return _raiser(RunError, "cannot assign to %r" % (target,))
+
+    # --------------------------------------------------------- expressions
+    def site(self, args):
+        return Site(tuple(args), tuple(self.expr(a) for a in args),
+                    tuple(self.reference(a) for a in args),
+                    tuple(self.alias(a) for a in args))
+
+    def element(self, node):
+        arr_of, index_of = self.expr(node[1]), self.expr(node[2])
+
+        def element(f):
+            arr, i = arr_of(f), index_of(f)
+            if not isinstance(arr, Arr):
+                raise RunError("index into a non-array")
+            j = i - arr.lo
+            if not 0 <= j < len(arr.data):
+                raise RunError("index %d outside [%d..%d]"
+                               % (i, arr.lo, arr.lo + len(arr.data) - 1))
+            return arr, j
+        return element
+
+    def reference(self, e):
+        if e[0] == "name":
+            name = e[1]
+
+            def ref(f):
+                c = f.cell(name)
+                if c is None:
+                    raise RunError("var argument %s is not declared" % name)
+                return c
+            return ref
+        if e[0] == "index":
+            element = self.element(e)
+            return lambda f: Elem(*element(f))
+        return _raiser(RunError, "a var argument must be a variable: %r" % (e,))
+
+    def alias(self, e):
+        if e[0] == "name":
+            name = e[1]
+
+            def key(f):
+                c = f.cell(name)
+                return ("c", id(c)) if c is not None else None
+            return key
+        if e[0] == "index":
+            element = self.element(e)
+
+            def key_element(f):
+                arr, j = element(f)
+                return ("e", id(arr), j)
+            return key_element
+        return lambda f: None
+
+    def expr(self, e):
         k = e[0]
         if k == "lit":
-            return e[1]
+            value = e[1]
+            return lambda f: value
         if k == "name":
-            c = self.cell(e[1])
-            return c.v if c is not None else self.invoke(e[1], [])
+            name = e[1]
+
+            def name_(f):
+                l = f.l
+                if l is not None and name in l:
+                    return l[name].v
+                c = f.g.get(name)
+                return c.v if c is not None else f.invoke(name, NO_ARGS)
+            return name_
         if k == "index":
-            arr, j = self.element(e)
-            return arr.data[j]
+            arr_of, index_of = self.expr(e[1]), self.expr(e[2])
+
+            def index(f):
+                arr, i = arr_of(f), index_of(f)
+                if not isinstance(arr, Arr):
+                    raise RunError("index into a non-array")
+                j = i - arr.lo
+                data = arr.data
+                if 0 <= j < len(data):
+                    return data[j]
+                raise RunError("index %d outside [%d..%d]" % (i, arr.lo, arr.lo + len(data) - 1))
+            return index
         if k == "fcall":
-            return self.invoke(e[1], e[2])
+            name, site = e[1], self.site(e[2])
+            return lambda f: f.invoke(name, site)
         if k == "rel":
-            a, b = self.eval(e[2]), self.eval(e[3])
+            return self.relation(e[1], self.expr(e[2]), self.expr(e[3]))
+        if k == "bin":
+            return self.binary(e[1], self.expr(e[2]), self.expr(e[3]))
+        if k == "neg":
+            inner = self.expr(e[1])
+
+            def neg(f):
+                v = inner(f)
+                return -v if isinstance(v, float) else wrap(-v)
+            return neg
+        if k == "not":
+            inner = self.expr(e[1])
+
+            def not_(f):
+                v = inner(f)
+                return (not v) if isinstance(v, bool) else wrap(~v)
+            return not_
+        return _raiser(Unsupported, k)
+
+    @staticmethod
+    def relation(op, left, right):
+        compare = RELATIONS[op]
+
+        def rel(f):
+            a, b = left(f), right(f)
             if isinstance(a, bytes) != isinstance(b, bytes):
                 raise RunError("a String compared with a number")
+            if isinstance(a, ORDERED) and isinstance(b, ORDERED):
+                return compare(a, b)
             return {"=": a == b, "<>": a != b, "<": a < b, ">": a > b,
-                    "<=": a <= b, ">=": a >= b}[e[1]]
-        if k == "bin":
-            op, a = e[1], self.eval(e[2])
-            if op in ("and", "or") and isinstance(a, bool):
-                if op == "and":
-                    return self.truth(self.eval(e[3])) if a else False
-                return True if a else self.truth(self.eval(e[3]))
-            b = self.eval(e[3])
-            if op == "+" and (isinstance(a, bytes) or isinstance(b, bytes)):
-                if not (isinstance(a, bytes) and isinstance(b, bytes)):
-                    raise RunError("a String added to a number")
-                return a + b
-            if isinstance(a, float) or isinstance(b, float) or op == "/":
-                if op == "/":
-                    return float(a) / float(b)
-                return {"+": a + b, "-": a - b, "*": a * b}[op]
-            if op == "+":
-                return wrap(a + b)
-            if op == "-":
-                return wrap(a - b)
-            if op == "*":
-                return wrap(a * b)
-            if op == "div":
-                return wrap(_trunc_div(a, b))
-            if op == "mod":
-                return wrap(a - b * _trunc_div(a, b))
-            if op == "and":
-                return wrap(a & b)
-            if op == "or":
-                return wrap(a | b)
-            if op == "xor":
-                return wrap(a ^ b)
-            if op == "shl":
-                return wrap(a << (b & 31))
-            if op == "shr":
-                return wrap((a & MASK) >> (b & 31))
-            raise Unsupported(op)
-        if k == "neg":
-            v = self.eval(e[1])
-            return -v if isinstance(v, float) else wrap(-v)
-        if k == "not":
-            v = self.eval(e[1])
-            return (not v) if isinstance(v, bool) else wrap(~v)
-        raise Unsupported(k)
+                    "<=": a <= b, ">=": a >= b}[op]
+        return rel
+
+    @staticmethod
+    def binary(op, left, right):
+        if op in ("and", "or"):
+            is_and = op == "and"
+
+            def logic(f):
+                a = left(f)
+                if a is True or a is False:
+                    if is_and:
+                        return _truth(right(f)) if a else False
+                    return True if a else _truth(right(f))
+                b = right(f)
+                if type(a) is int and type(b) is int:
+                    r = (a & b if is_and else a | b) & MASK
+                    return r - 0x100000000 if r & 0x80000000 else r
+                return _arith(op, a, b)
+            return logic
+        if op == "+":
+            def add(f):
+                a, b = left(f), right(f)
+                if type(a) is int and type(b) is int:
+                    r = (a + b) & MASK
+                    return r - 0x100000000 if r & 0x80000000 else r
+                return _arith("+", a, b)
+            return add
+        if op == "-":
+            def sub(f):
+                a, b = left(f), right(f)
+                if type(a) is int and type(b) is int:
+                    r = (a - b) & MASK
+                    return r - 0x100000000 if r & 0x80000000 else r
+                return _arith("-", a, b)
+            return sub
+        if op == "*":
+            def mul(f):
+                a, b = left(f), right(f)
+                if type(a) is int and type(b) is int:
+                    r = (a * b) & MASK
+                    return r - 0x100000000 if r & 0x80000000 else r
+                return _arith("*", a, b)
+            return mul
+
+        def other(f):
+            a = left(f)
+            return _arith(op, a, right(f))
+        return other
 
 
 # ----------------------------------------------------------------- engine
@@ -983,10 +1257,19 @@ def test_the_emitted_merge_dumps_refs_rows(game_dir, cases, states):
     assert check(game_dir, all_cases, files, names, states) == []
 
 
+#: The slow gate in parts, each one interpreted run of the suite over every
+#: PARTS-th case, so a parallel run (pytest -n) spreads it over its workers:
+#: in one piece it took longer than the rest of the suite together.
+PARTS = 16
+
+
 @pytest.mark.slow
-def test_the_emitted_merge_dumps_refs_rows_on_every_case(game_dir, cases, states):
+@pytest.mark.parametrize("part", range(PARTS))
+def test_the_emitted_merge_dumps_refs_rows_on_every_case(game_dir, cases, states, part):
     all_cases, files = cases
-    assert check(game_dir, all_cases, files, set(c.name for c in all_cases), states) == []
+    names = sorted(c.name for c in all_cases)[part::PARTS]
+    assert names
+    assert check(game_dir, all_cases, files, set(names), states) == []
 
 
 def test_a_wrong_tie_break_is_caught(game_dir, cases, states):

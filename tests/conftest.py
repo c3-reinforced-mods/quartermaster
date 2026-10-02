@@ -36,6 +36,23 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "slow: long gate, run with --runslow")
 
 
+def pytest_sessionfinish(session, exitstatus):
+    """With QM_PASCOV set, write what the interpreter ran (test_m3_pascal's
+    COVERAGE) to <QM_PASCOV>\\<worker>.json, one file per process, so a
+    parallel run's workers do not overwrite each other."""
+    folder = os.environ.get("QM_PASCOV")
+    pas = sys.modules.get("test_m3_pascal")
+    if not folder or pas is None:
+        return
+    import json
+    os.makedirs(folder, exist_ok=True)
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    rows = [{"text": text, "lines": sorted(lines), "ran": sorted(ran)}
+            for text, (lines, ran) in pas.COVERAGE.items()]
+    with open(os.path.join(folder, worker + ".json"), "w", encoding="utf-8") as fh:
+        json.dump(rows, fh)
+
+
 def pytest_collection_modifyitems(config, items):
     if config.getoption("--runslow") or os.environ.get("QM_SLOW") == "1":
         return

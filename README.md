@@ -60,7 +60,13 @@ before the next upload.
 ```
 python -m pytest                 # fast tests
 python -m pytest --runslow       # every test
+python -m pytest --runslow -n auto   # every test on every core (pip install pytest-xdist)
 ```
+
+Coverage (`pip install pytest-cov`): `--cov=ref --cov=tools --cov-branch` for the Python
+side; for the game-side code set `QM_PASCOV` to a folder, run the tests, then
+`python tools/pascov.py <folder>` prints, per `src\` file, how many of its statements the
+interpreter ran.
 
 The tests read the installed game (and skip what needs a mod that is not installed); no
 file of the game or of another mod is copied into this repository. `ref/` is a Python twin
