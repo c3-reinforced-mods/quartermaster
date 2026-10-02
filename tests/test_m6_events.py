@@ -15,6 +15,8 @@ What it must do (docs/ui.md, the hands-on check of 2026-09-28):
   * `verline` adds Quartermaster's version line to the main menu's corner.
 This pins what the state does with the events the engine sends.
 """
+import pytest
+
 import test_m3_pascal as PAS
 import test_m5_pascal as PAS5
 
@@ -473,3 +475,106 @@ def test_the_tick_asks_for_the_version_line_only_when_the_menu_drew_it_again():
         eng.set("qm_ui", **keys)
         PAS5.run(eng, "qmTick")
         assert eng.did == []
+
+
+LOBBY = 70
+WINDOW = 71
+
+
+def tick_at(paths, hidden=(), **rt):
+    """qmTick with the elements `paths` ({path: handle}) under the top, the
+    screens ready, the caption and the version line in place; the states it
+    runs are recorders."""
+    eng = tick(tick=0, **rt)
+    eng.hidden.update(hidden)
+    have = dict(PATHS)
+    have.update(paths)
+    eng.natives["getguielementindexbynameparent"] = (
+        lambda path, parent: have.get(path, 0) if parent == TOP else
+        (have.get(b"qmlobby", 0) if parent == LOBBY else eng.named.get(path, 0)))
+    for name in ("qmModFiles", "qmTrial", "qmUiAct", "qmSetSave"):
+        eng.states[name.lower()] = PAS5.Fake((lambda n: lambda: eng.did.append(("run", n)))(name))
+    return eng
+
+
+@pytest.mark.parametrize("canon, custom", [(0, b"1"), (1, b"0")])
+def test_the_lobby_gets_its_line_once_the_order_is_known(canon, custom):
+    shell = {b"InternetShell.backgroundparent.background": LOBBY}
+    eng = tick_at(shell)
+    eng.set("qm_order", src=b"ini", canon=canon)
+    PAS5.run(eng, "qmTick")
+    assert eng.did == [("gui", b"EventQmManager")]
+    assert (eng.key(b"qm_ui", b"lobby"), eng.key(b"qm_ui", b"lobbycustom")) == (b"1", custom)
+    # Not without the order, not twice, not once turned off, not outside the shell.
+    for paths, order, ui in ((shell, None, {}), ({**shell, b"qmlobby": 80}, b"ini", {}),
+                             (shell, b"ini", {"lobbyoff": 1}), ({}, b"ini", {})):
+        eng = tick_at(paths)
+        if order is not None:
+            eng.set("qm_order", src=order, canon=canon)
+        if ui:
+            eng.set("qm_ui", **ui)
+        PAS5.run(eng, "qmTick")
+        assert eng.did == [], (paths, order, ui)
+
+
+def test_the_guard_notice_opens_the_window_once_and_marks_the_note_shown():
+    eng = tick_at({}, gdshow=1, busy=0, rs=0)
+
+    def save_flat(h, path):             # guard.cfg is a flat parser file: its keys
+        eng.written[path] = dict(eng.nodes[h].keys)
+        return True
+    eng.natives["parsersavetofilebyhandle"] = save_flat
+    eng.set("qm_glob_note", n=1, shown=0, restarted=0)
+    eng.set("qm_ui", gdln=1)
+    PAS5.run(eng, "qmTick")
+    assert eng.did == [("gui", b"ShowQmManager")]
+    assert (eng.key(b"qm_rt", b"gdshow"), eng.key(b"qm_ui", b"gdopen")) == (b"0", b"1")
+    assert eng.written[PAS5.SAVE + b"quartermaster\\guard.cfg"][b"shown"] == b"1"
+    assert any(l.startswith(b"[qm] tick: the guard notice opened, mode=") and l.endswith(b"lines=1")
+               for l in eng.log)
+    PAS5.run(eng, "qmTick")                           # once
+    assert eng.did == [("gui", b"ShowQmManager")]
+    # Not while a restart is pending, a boot runs or a map is loaded.
+    for rt, stage in (({"rs": 1}, 0), ({"busy": 1}, 0), ({}, 2)):
+        eng = tick_at({}, gdshow=1, busy=0, rs=0)
+        eng.set("qm_rt", **rt)
+        eng.gamestage = stage
+        PAS5.run(eng, "qmTick")
+        assert ("gui", b"ShowQmManager") not in eng.did, (rt, stage)
+
+
+def test_a_harness_runs_switch_opens_the_window_once():
+    eng = tick_at({}, uishow=1, gdshow=0, busy=0, rs=0)
+    PAS5.run(eng, "qmTick")
+    assert eng.did == [("gui", b"ShowQmManager")] and eng.key(b"qm_rt", b"uishow") == b"0"
+    assert b"[qm] tick: the window opened for the run (qm_show_ui.flag)" in eng.log
+
+
+@pytest.mark.parametrize("shown", [True, False])
+def test_a_mod_files_request_runs_and_an_open_window_says_how_it_went(shown):
+    eng = tick_at({b"QmManager": WINDOW}, hidden=() if shown else (WINDOW,),
+                  mfreq=b"create", busy=0)
+    PAS5.run(eng, "qmTick")
+    assert eng.did == [("run", "qmModFiles")] + ([("gui", b"ShowQmManager")] if shown else [])
+
+
+@pytest.mark.parametrize("shown", [True, False])
+def test_an_activation_check_runs_once_and_the_controller_takes_its_answer(shown):
+    eng = tick_at({b"QmManager": WINDOW}, hidden=() if shown else (WINDOW,),
+                  trq=2, trdone=1, busy=0)
+    PAS5.run(eng, "qmTick")
+    assert eng.did == [("run", "qmTrial"), ("run", "qmUiAct")] + (
+        [("gui", b"ShowQmManager")] if shown else [])
+    assert eng.key(b"qm_ui", b"cmd") == b"trialdone" and eng.key(b"qm_rt", b"trdone") == b"2"
+    n = len(eng.did)
+    PAS5.run(eng, "qmTick")                           # answered: not again
+    assert len(eng.did) == n
+
+
+def test_accepted_options_are_saved_once_and_nothing_runs_while_a_boot_does():
+    eng = tick_at({}, setsave=1, busy=0)
+    PAS5.run(eng, "qmTick")
+    assert eng.did == [("run", "qmSetSave")] and eng.key(b"qm_rt", b"setsave") == b"0"
+    eng = tick_at({}, setsave=1, mfreq=b"create", trq=1, busy=1)
+    PAS5.run(eng, "qmTick")
+    assert eng.did == []
