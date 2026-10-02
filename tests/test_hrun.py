@@ -734,6 +734,9 @@ def test_a_composed_run_starts_from_the_chosen_mods_and_restores_the_owners_file
     ws = b"..\\..\\workshop\\content\\333420\\"
     assert rows == [(ws + b"111", b"True"), (b"mods\\SW_Frontline_Protocol", b"True"),
                     (ws + b"222", b"False"), (b"mods\\Quartermaster", b"False")]
+    # The start a check compares with: the composed file, kept in the run folder.
+    with open(os.path.join(w.logs, "t1", hrun.INI_COMPOSED), "rb") as fh:
+        assert fh.read() == seen["ini"]
     # Afterwards the player's bytes, whatever the run wrote.
     assert ini_bytes(w) == ODD_MODS_INI and summary["sweep"]["ok"]
 

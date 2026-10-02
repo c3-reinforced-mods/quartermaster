@@ -308,14 +308,18 @@ def case_bytes(name):
 
 
 def installed_dirs(game=GAME):
-    """The dirs of the installed mods.ini (read only)."""
-    path = os.path.join(game, "mods", "mods.ini")
-    with open(path, "rb") as fh:
-        rows, problem = O.parse_mods_ini(fh.read())
-    if problem is not None:
-        raise SystemExit("m5cases: %s is not in the layout the game writes (%s)"
-                         % (path, problem.decode()))
-    return [d for d, _dis in rows]
+    """The dirs of the mods a composed run starts with: every Workshop item
+    Steam has installed and every folder in mods\\ (hrun composed_rows), so
+    the seeds know the same mods. Not the installed mods.ini: an item the
+    engine has not registered is missing there, and every check that read it
+    then failed on a mod the run had (m12full runs of 2026-10-02: the
+    published Quartermaster, held out of mods.ini by its own local copy)."""
+    import hrun
+    path = os.path.join(game, "mods")
+    dirs = [hrun.WORKSHOP_DIR + n.encode("ascii") for n in hrun.installed_workshop(game)]
+    dirs += [b"mods\\" + n.encode("ascii") for n in sorted(os.listdir(path))
+             if os.path.isdir(os.path.join(path, n))]
+    return dirs
 
 
 def seed_known(dirs):
@@ -533,20 +537,29 @@ def kept_order_problems(run_dir, rows):
     keeps its place among the others, folders the engine registered during
     the run come after them, and Quartermaster is last.
 
-    The run starts from what hrun composed, not from its mods.ini.backup (the
-    player's file): `command` asks for `--canonical`, so the start is the
-    backup's rows in canonical order. Until 2026-10-01 the check compared with
-    the backup itself, and every M7 run of m12 failed on an order the game had
-    kept (runs m12cri1-i7)."""
+    The run starts from what hrun composed (mods.ini.composed), not from its
+    mods.ini.backup (the player's file). Until 2026-10-01 the check compared
+    with the backup itself, and every M7 run of m12 failed on an order the
+    game had kept (runs m12cri1-i7); then with the backup's rows in canonical
+    order, which lacks an installed item the player's file does not list
+    (runs m12fulli1-i7 of 2026-10-02). A run from before hrun kept the
+    composed file falls back to that."""
     problems = []
     dirs = [d for d, _dis in rows]
     if not dirs or O.norm_dir(dirs[-1]) != O.norm_dir(QM):
         problems.append("mods.ini.during: Quartermaster is not last")
-    base, _p = O.parse_mods_ini(_read(os.path.join(run_dir, "mods.ini.backup")) or b"")
-    if base is None:
-        return problems + ["mods.ini.backup is missing or not in the engine's layout"]
-    before = [O.norm_dir(d) for d in O.canonical_order([d for d, _dis in base])
-              if O.norm_dir(d) != O.norm_dir(QM)]
+    composed = _read(os.path.join(run_dir, "mods.ini.composed"))
+    if composed is not None:
+        start, _p = O.parse_mods_ini(composed)
+        if start is None:
+            return problems + ["mods.ini.composed is not in the engine's layout"]
+        start = [d for d, _dis in start]
+    else:
+        base, _p = O.parse_mods_ini(_read(os.path.join(run_dir, "mods.ini.backup")) or b"")
+        if base is None:
+            return problems + ["mods.ini.backup is missing or not in the engine's layout"]
+        start = O.canonical_order([d for d, _dis in base])
+    before = [O.norm_dir(d) for d in start if O.norm_dir(d) != O.norm_dir(QM)]
     now = [O.norm_dir(d) for d in dirs if O.norm_dir(d) != O.norm_dir(QM)]
     if now[:len(before)] != [d for d in before if d in now]:
         problems.append("mods.ini.during has not kept the order the run started with: %s"

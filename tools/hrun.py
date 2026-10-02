@@ -80,7 +80,8 @@ real paths, and stops):
                 (--enable, --unlisted, --compose): then,
                 after the backup, mods.ini holds every installed Workshop item
                 and mods\ folder off, the --enable ones on in the order given,
-                the deployed folders on, Quartermaster last.
+                the deployed folders on, Quartermaster last; a copy goes into
+                the run folder as mods.ini.composed.
    7 state      move <save>\quartermaster aside (renamed, never deleted) so the
                 run starts without Quartermaster's marker files - or with a copy
                 of --state DIR; runs do not see each other's state.
@@ -167,6 +168,11 @@ STATE_COPY = "qm_save"
 # The deployed mods\Quartermaster as the run left it (its generated files).
 QM_COPY = "qm_mod"
 INI_DURING = "mods.ini.during"
+# The mods.ini a composed run started with: the start a check compares the
+# game's file with. The player's backup is not that start - hrun lists every
+# installed Workshop item, and one the player's file lacks (a subscription
+# the engine has not registered) sits among the others.
+INI_COMPOSED = "mods.ini.composed"
 GAME_IMAGES = hbuild.GAME_IMAGES
 
 # The hook files of plan S5, relative to data/.
@@ -1189,6 +1195,8 @@ def run(opts, system=None, out=print):
             data = composed_ini(opts, baseline["mods_listing"])
             journal.data["composed"] = hashlib.sha256(data).hexdigest()
             journal.save()
+            with open(os.path.join(run_dir, INI_COMPOSED), "wb") as fh:
+                fh.write(data)
             with open(mods_ini(game), "wb") as fh:
                 fh.write(data)
             out("compose: mods.ini written, %d bytes; on = %s" % (

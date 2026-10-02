@@ -39,8 +39,11 @@ def test_the_i7_seed_knows_everything_but_the_new_folder():
 
 def test_prepare_writes_cases_fixture_and_seed(tmp_path, monkeypatch):
     game = tmp_path / "game"
-    (game / "mods").mkdir(parents=True)
-    (game / "mods" / "mods.ini").write_bytes(O.render_mods_ini([(b"mods\\A", b"True")]))
+    (game / "mods" / "A").mkdir(parents=True)
+    # The seeds follow the folders, as hrun's composition does: a row of the
+    # player's mods.ini whose folder is gone is not a mod the run has.
+    (game / "mods" / "mods.ini").write_bytes(
+        O.render_mods_ini([(b"mods\\A", b"True"), (b"mods\\Gone", b"True")]))
     vanilla = game.joinpath("data", *C.NEW_SHIPS.split("\\"))
     vanilla.parent.mkdir(parents=True)
     vanilla.write_bytes(b"section.begin\r\n   x = 1\r\nsection.end\r\n")
@@ -140,6 +143,36 @@ def test_a_run_that_differs_is_caught(tmp_path):
     text = "\n".join(problems)
     assert "2 restart(s), expected 1" in text and "refused=loop" in text
     assert "holds '[qm] restart now'" in text
+
+
+def test_the_kept_order_starts_from_the_composed_file(tmp_path):
+    """hrun lists every installed Workshop item; one the player's mods.ini
+    does not list (the published Quartermaster, which its local copy kept out:
+    runs m12fulli1-i7) sits among the others in the start, not after them."""
+    pub = W + b"3811537510"
+    composed = [(W + b"873048118", b"True"), (pub, b"True"), (SWFP, b"True"), (QM, b"False")]
+    during = [(W + b"873048118", b"True"), (pub, b"True"), (SWFP, b"True"), (NEWF, b"False"),
+              (QM, b"False")]
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "mods.ini.backup").write_bytes(O.render_mods_ini(START))
+    assert C.kept_order_problems(str(run), during)            # the backup alone: wrong
+    (run / "mods.ini.composed").write_bytes(O.render_mods_ini(composed))
+    assert C.kept_order_problems(str(run), during) == []
+    moved = [during[2], during[0], during[1]] + during[3:]
+    assert "has not kept the order" in "\n".join(C.kept_order_problems(str(run), moved))
+
+
+def test_the_seeds_know_what_hrun_composes(tmp_path):
+    """Every installed Workshop item and every folder in mods\\, whatever the
+    player's mods.ini lists."""
+    game = tmp_path / "steamapps" / "common" / "Cossacks 3"
+    (game / "mods" / "QMTestWASD").mkdir(parents=True)
+    (game / "mods" / "mods.ini").write_bytes(O.render_mods_ini([(SWFP, b"True")]))
+    for n in ("873048118", "3811537510"):
+        (tmp_path / "steamapps" / "workshop" / "content" / "333420" / n).mkdir(parents=True)
+    assert C.installed_dirs(str(game)) == [W + b"3811537510", W + b"873048118",
+                                           b"mods\\QMTestWASD"]
 
 
 def test_the_order_checks_read_mods_ini_as_the_game_left_it(tmp_path):
