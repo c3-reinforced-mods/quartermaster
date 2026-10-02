@@ -41,9 +41,13 @@ start when they ship a global script that an enabled mod already ships:
 
 It does nothing in the multiplayer sync (StringRegister7 set, or
 <save>\mods.restore present: plan S8), on a game whose resource.script is
-not the one it was built from (FileAge differs: the guard carries a copy of
-that file), or when the previous start was a guard restart for the same
-mods (a loop: the note says so and the key matches).
+not the one it was built from (the guard carries a copy of that file), or
+when the previous start was a guard restart for the same mods (a loop: the
+note says so and the key matches). Which resource.script the game has is
+told by its content (`game_stamp`). Until 0.1.2 it was its FileAge, the day
+Steam wrote the file on that machine: every installation has its own, and
+the guard was off on all but the author's (first start on a second
+computer, 2026-10-02).
 
 Every start it does not restart (clean, first boot, loop, no mods.ini) it
 also records the enabled mods in load order - `<save>\quartermaster\
@@ -73,11 +77,19 @@ The note (guard.cfg) is the engine parser's flat file, keys:
 __all__ = ["LIB", "GLOBAL", "SOURCE", "fold", "comparable", "global_names", "GMod",
            "known_set", "is_known", "quarantine", "conflicts", "first_shared",
            "conflict_pairs", "Plan", "decide",
-           "note_values", "note_key"]
+           "note_values", "note_key", "game_stamp"]
 
 LIB = b"lib\\"
 GLOBAL = b"dmscript.global"
 SOURCE = b"dmscript.source"
+
+
+def game_stamp(data):
+    """The stamp of a resource.script as the guard reads the installed one:
+    its bytes up to the first zero byte (a text file has none - the guard
+    reads it as qmRawRead reads text), hashed as ref/fingerprint.py qhash."""
+    from ref.fingerprint import qhash
+    return qhash(data.split(b"\x00", 1)[0])
 
 
 def fold(d):

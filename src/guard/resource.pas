@@ -1,6 +1,6 @@
 guard: QmGuard
 into: data/scripts/resource.script
-requires: guardages
+requires: guardstamp, h1mul, h1mod, h2mul, h2mod
 ---
 //! The pre-compile guard (plan S17; twin: ref/guard.py, which has the rules).
 //! tools/hbuild.py writes the installed game's resource.script first and these
@@ -27,11 +27,56 @@ requires: guardages
 var qmGdSave : String = GetAppSaveDirectoryPath+'quartermaster\';
 var qmGdWhy : String = '';
 var qmGdAge : Integer = FileAge('.\data\scripts\resource.script');
+//! The game this guard was built against: its own resource.script, read by
+//! the absolute path (`.\data\` would read this mod's copy, the overlay's) the
+//! way qmRawRead reads a text file - ReadInteger with the variable preset to
+//! 0, bytes by `shr` and `and 255`, a zero byte ends it - and hashed as
+//! ref/fingerprint.py qhash (ref/guard.py game_stamp). Content, not FileAge:
+//! Steam stamps every file with the day it wrote it, so the date differs on
+//! every installation and the guard was off on all but the author's (first
+//! start on a second computer, 2026-10-02).
+var qmGdStamp : String = '-';
+var qmGdVan : String = ExtractFilePath(GetApplicationFileName)+'data\scripts\resource.script';
 if (StringRegister7<>'') or (FileAge(GetAppSaveDirectoryPath+'mods.restore')<>-1) then
 qmGdWhy := 'mp-sync'
 else
-if (StrPos('|'+IntToStr(qmGdAge)+'|', ${guardages})=0) then
-qmGdWhy := 'game-version';
+begin
+   if (FileAge(qmGdVan)<>-1) then
+   begin
+      var qmGdRf : Integer = OpenFileRead(qmGdVan);
+      var qmGdRv : Integer = 0;
+      var qmGdRb : Integer;
+      var qmGdRs : Integer;
+      var qmGdR1 : Integer = 0;
+      var qmGdR2 : Integer = 0;
+      var qmGdRl : Integer = 0;
+      var qmGdRi : Integer = 0;
+      var qmGdRe : Boolean = False;
+      while (not qmGdRe) and (qmGdRi<262144) do
+      begin
+         qmGdRv := 0;
+         ReadInteger(qmGdRf, qmGdRv);
+         qmGdRi := qmGdRi+1;
+         for qmGdRs:=0 to 3 do
+         if (not qmGdRe) then
+         begin
+            qmGdRb := (qmGdRv shr (qmGdRs*8)) and 255;
+            if (qmGdRb=0) then
+            qmGdRe := True
+            else
+            begin
+               qmGdR1 := (qmGdR1*${h1mul}+qmGdRb+1) mod ${h1mod};
+               qmGdR2 := (qmGdR2*${h2mul}+qmGdRb+1) mod ${h2mod};
+               qmGdRl := qmGdRl+1;
+            end;
+         end;
+      end;
+      CloseFile(qmGdRf);
+      qmGdStamp := IntToStr(qmGdR1)+'-'+IntToStr(qmGdR2)+'-'+IntToStr(qmGdRl);
+   end;
+   if (qmGdStamp<>${guardstamp}) then
+   qmGdWhy := 'game-version';
+end;
 
 var qmGdKnown : String = '|';
 var qmGdHave : Boolean = False;
@@ -388,4 +433,4 @@ begin
    ParserSetValueByKeyByHandle(qmGdCp, 'n', IntToStr(qmGdK));
    ParserSaveToFileByHandle(qmGdCp, qmGdSave+'compile.cfg');
 end;
-log('[qm-guard] '+qmGdWhy+' mods='+IntToStr(qmGdN)+' age='+IntToStr(qmGdAge));
+log('[qm-guard] '+qmGdWhy+' mods='+IntToStr(qmGdN)+' age='+IntToStr(qmGdAge)+' game='+qmGdStamp);

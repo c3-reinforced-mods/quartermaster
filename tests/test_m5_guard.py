@@ -26,13 +26,18 @@ from ref import order as O
 QM, W, INI, SAVE = M5.QM, M5.W, M5.INI, M5.SAVE
 QSAVE = SAVE + b"quartermaster\\"
 RESOURCE = b".\\data\\scripts\\resource.script"
-AGE = 1564229335                      # the resource.script the guard was built against
+#: The installed resource.script as the guard reads it: by the absolute path
+#: (GetApplicationFileName's folder), not through the overlay.
+VANILLA_PATH = M5.APP + b"data\\scripts\\resource.script"
+#: The resource.script the guard was built against (any text; its length is
+#: not a multiple of 4, so the last ReadInteger is a partial one).
+VANILLA = b"// vanilla resource.script\r\nvar res: boolean=SteamPrepareWorkshop(true, false);\r\n"
+AGE = 1564229335                      # its FileAge: logged, never compared
 
 
 @functools.lru_cache(maxsize=None)
 def guard_code():
-    guard = H.load_guard()
-    return tuple(H.render_lines(guard, {"guardages": H.qstr("|%d|%d|" % (AGE - 3600, AGE))}))
+    return tuple(H.render_lines(H.load_guard(), H.guard_variables(VANILLA)))
 
 
 def flat(keys):
@@ -100,15 +105,19 @@ class Start(object):
     """One start: the mods in mods.ini order and what the save folder holds."""
 
     def __init__(self, mods, known=None, register7=b"", restore_file=False, age=AGE,
-                 previous=None, compile_prev=None, ini=True, steam=True):
+                 previous=None, compile_prev=None, ini=True, steam=True, game=VANILLA):
         self.mods, self.known, self.register7 = mods, known, register7
         self.restore_file, self.age, self.previous = restore_file, age, previous
         self.compile_prev, self.ini, self.steam = compile_prev, ini, steam
+        # The installed resource.script (None: not there at all).
+        self.game = game
 
 
 def files_of(s):
     files, ages = {}, {RESOURCE: s.age}
     files[RESOURCE] = b"vanilla"
+    if s.game is not None:
+        files[VANILLA_PATH] = s.game
     if s.ini:
         files[INI] = O.render_mods_ini([(m.dir, O.FALSE if m.on else O.TRUE) for m in s.mods])
     for m in s.mods:
@@ -149,8 +158,9 @@ def twin(s):
                  next((h for h in G.HOOK_ORDER if h in m.hooks), b""))
           for m in s.mods]
     previous = dict(s.previous) if s.previous is not None else None
+    same = s.game is not None and G.game_stamp(s.game) == G.game_stamp(VANILLA)
     plan = G.decide(gm, s.known, mp_sync=s.register7 != b"", restore_file=s.restore_file,
-                    same_game=s.age in (AGE - 3600, AGE), previous=previous)
+                    same_game=same, previous=previous)
     return gm, plan
 
 
@@ -163,7 +173,7 @@ def check(s):
         # No mods.ini to write back (the twin does not read the file): the
         # start goes on as it is.
         why = b"no-mods-ini"
-    assert b"[qm-guard] %s mods=%d age=%d" % (why, len(s.mods), s.age) in text, (why, text)
+    assert b"[qm-guard] %s mods=%d age=%d game=" % (why, len(s.mods), s.age) in text, (why, text)
     note = eng.written.get(QSAVE + b"guard.cfg")
     if why == b"restart":
         assert eng.restarted == ["lan", "steam", "restart"]
@@ -241,8 +251,13 @@ def test_both_at_once_and_a_new_mod_of_its_own_kept():
     (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS)), b"clean"),
     (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), register7=b"x"), b"mp-sync"),
     (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), restore_file=True), b"mp-sync"),
-    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), age=AGE + 1), b"game-version"),
-    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), age=AGE - 3600), b"restart"),
+    # Another game version: its resource.script differs by one byte, or is gone.
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), game=VANILLA.replace(b"true", b"True")),
+     b"game-version"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), game=None), b"game-version"),
+    # The same file written on another day (another installation): the guard works
+    # there too - the case that was off on every machine but the author's.
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), age=AGE - 3600 * 24 * 40), b"restart"),
     (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), steam=False), b"restart"),
     (Start([SVC, QMM, CANNONS], known=known(SVC, QMM),
            previous=[(b"restarted", b"1"), (b"key", G.fold(CANNONS.dir) + b"|")]), b"loop"),
@@ -256,6 +271,20 @@ def test_both_at_once_and_a_new_mod_of_its_own_kept():
 def test_each_rule_decides_as_the_twin(start, why):
     eng, _plan = check(start)
     assert eng.log[-1].startswith(b"[qm-guard] " + why + b" ")
+
+
+@pytest.mark.parametrize("game", [b"", b"a", b"ab", b"abc", b"abcd", b"abcde",
+                                  b"line\r\nline 2\r\n", VANILLA * 40, b"text\x00after a zero",
+                                  bytes(range(1, 256)) * 3])
+def test_the_guard_reads_the_stamp_the_twin_computes(game):
+    """Built against `game`, the guard finds the same stamp in it (the twin's
+    game_stamp: bytes up to a zero byte, qhash): a start it judges, not
+    game-version - whatever the file's length modulo 4."""
+    code = tuple(H.render_lines(H.load_guard(), H.guard_variables(game)))
+    files, ages = files_of(Start([SVC, QMM], known=known(SVC, QMM), game=game))
+    eng = Engine(files, ages, mods=[(SVC.dir, True, SVC.tag), (QM, True, b"0")])
+    PAS.State(list(code), eng).run()
+    assert eng.log[-1] == b"[qm-guard] clean mods=2 age=%d game=%s" % (AGE, G.game_stamp(game))
 
 
 def test_moved_follows_mods_ini_not_the_engines_list():

@@ -7,7 +7,7 @@ mod's change is gone, or the game stops at "Error compiling scripts". Quartermas
 fixes that inside the game. It is a tool, not a gameplay mod: on its own it changes
 nothing in battles, units or balance, and it needs no other mod.
 
-Version 0.1.1 (beta). Players get it from the game's Steam Workshop.
+Version 0.1.2 (beta). Players get it from the game's Steam Workshop.
 
 ## What it does
 
@@ -53,7 +53,10 @@ copies the build into the game's `mods\Quartermaster`; `--update` replaces an in
 copy and keeps its mod.ini once it names a Workshop item (its id after an upload), else
 takes the build's. While that folder is in `mods\`, the game does not load the subscribed
 copy of the item: to play the Workshop copy, move the folder out of `mods\`, and back
-before the next upload.
+before the next upload. Upload from that `mods\Quartermaster` entry of the Mod Manager,
+never from the Workshop one: the subscribed copy holds what Quartermaster wrote while the
+game ran (its state and the player's merges), and an upload from it publishes them (an
+upload of 2026-10-02 sent `data\quartermaster\state\manifest.cfg` that way).
 
 ## Tests
 

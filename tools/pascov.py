@@ -71,7 +71,7 @@ def units():
         out.append((hook.name, H.hook_code(hook, v), origins(hook, H._vars_for(hook, v))))
     guard = H.load_guard()
     if guard is not None:
-        gv = {"guardages": H.qstr("|0|")}
+        gv = H.guard_variables(b"")
         out.append((guard.name, H.render_lines(guard, gv), origins(guard, gv)))
     for name, code, where in out:
         if len(code) != len(where):

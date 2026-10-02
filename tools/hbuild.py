@@ -238,7 +238,7 @@ GAME = r"C:\Program Files (x86)\Steam\steamapps\common\Cossacks 3"
 LOCK_NAME = "swfp_game.lock"
 GAME_IMAGES = ("cossacks.exe", "modman.exe")
 
-QM_VERSION = "0.1.1"
+QM_VERSION = "0.1.2"
 
 IDX_REL = "data/quartermaster/vanilla.idx"
 IDX_FORMAT = 1
@@ -696,15 +696,17 @@ def load_guard(src_dir=SRC):
     return guards[0] if guards else None
 
 
-def guard_ages(mtime):
-    """What FileAge may answer for the vanilla resource.script modified at
-    `mtime`, as a `'|a|b|c|'` literal. The game converts with the time-zone
-    offset of today for every file (ref/index.py dos_age), so a file of
-    summer time reads an hour off in winter and the other way round: the
-    guard accepts the build's value and the two an hour either side."""
-    from ref.index import dos_age
-    ages = sorted(set(dos_age(mtime + d) for d in (-3600, 0, 3600)))
-    return qstr("|" + "|".join("%d" % a for a in ages) + "|")
+def guard_variables(vanilla):
+    """The guard's values: the stamp of the installed resource.script it was
+    built against (ref/guard.py game_stamp) and the hash constants the guard
+    computes it with. Until 0.1.2 the guard compared the file's FileAge, which
+    is the day Steam wrote the file on that machine: the guard was off on
+    every installation but the author's (first start on a second computer,
+    2026-10-02)."""
+    from ref.guard import game_stamp
+    return {"guardstamp": qstr(game_stamp(vanilla).decode("ascii")),
+            "h1mul": _fingerprint.H1[0], "h1mod": _fingerprint.H1[1],
+            "h2mul": _fingerprint.H2[0], "h2mod": _fingerprint.H2[1]}
 
 
 def build_guard(guard, game_dir, env):
@@ -718,7 +720,7 @@ def build_guard(guard, game_dir, env):
                          "under %s)" % (guard.path, GUARD_FILE, game_dir))
     with open(source, "rb") as fh:
         vanilla = fh.read()
-    code = render_lines(guard, {"guardages": guard_ages(os.path.getmtime(source))})
+    code = render_lines(guard, guard_variables(vanilla))
     if not any(line.strip() for line in code):
         raise BuildError("%s: the guard has no code" % guard.path)
     head = vanilla if vanilla.endswith(CRLF) else vanilla + CRLF

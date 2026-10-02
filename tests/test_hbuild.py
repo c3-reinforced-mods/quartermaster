@@ -597,9 +597,10 @@ def test_quartermaster_builds_with_zero_findings_offline():
                   b"qmPlan", b"qmFingerprint"):
         assert b"   Name = %s\r\n" % state in core
     assert PREFIX + b"   Log('[qm] '+qmMsg);\r\n" in core
-    assert PREFIX + b"qmLog('boot version '+'0.1.1'+' hook='" in core
-    # 0.1.0, the v0.1 beta (2026-09-30); 0.1.1, its first Workshop update (2026-10-02)
-    assert hbuild.QM_VERSION == "0.1.1"
+    assert PREFIX + b"qmLog('boot version '+'0.1.2'+' hook='" in core
+    # 0.1.0, the v0.1 beta (2026-09-30); 0.1.1 and 0.1.2, the first Workshop
+    # updates, no change in behaviour (2026-10-02)
+    assert hbuild.QM_VERSION == "0.1.2"
     # Build variables arrive as literals: the S5 list, the hash constants.
     assert (b"'|gui\\menu.inc\\cameracontrol.inc|gui\\menu.inc\\doprogress.inc|"
             b"gui\\menu.inc\\eventmainmenu.inc|gui\\menu.inc\\initminimap.inc|"
@@ -991,9 +992,11 @@ def test_cli_deploy_and_undeploy_on_a_fake_game(fake):
 
 
 # ------------------------------------------------------------ the guard
-GUARD_HEAD = "guard: QmGuard\ninto: data/scripts/resource.script\nrequires: guardages\n---\n"
+GUARD_HEAD = ("guard: QmGuard\ninto: data/scripts/resource.script\n"
+              "requires: guardstamp, h1mul, h1mod, h2mul, h2mod\n---\n")
 GUARD_BODY = ("var qmGdAge : Integer = FileAge('.\\data\\scripts\\resource.script');\n"
-              "if (StrPos('|'+IntToStr(qmGdAge)+'|', ${guardages})=0) then\n"
+              "var qmGdR1 : Integer = (${h1mul}+${h2mul}) mod ${h1mod} mod ${h2mod};\n"
+              "if (IntToStr(qmGdAge)<>${guardstamp}) then\n"
               "log('[qm-guard] game-version');\n")
 
 
@@ -1007,8 +1010,10 @@ def test_the_guard_is_the_vanilla_on_load_script_with_its_lines_after_it(tmp_pat
     assert data.startswith(vanilla) and data.endswith(CRLF)
     tail = data[len(vanilla):]
     assert tail.startswith(CRLF + b"var qmGdAge : Integer = FileAge(")
-    ages = re.search(rb"'\|(\d+)\|(\d+)\|(\d+)\|'", tail)
-    assert ages and len(set(ages.groups())) == 3
+    # The game it was built against, by content (ref/guard.py game_stamp), not
+    # by the file's date: that is the day Steam wrote it on this machine.
+    from ref.guard import game_stamp
+    assert b"<>'" + game_stamp(vanilla) + b"') then" in tail
     assert r.findings == []
 
 
