@@ -906,6 +906,10 @@ def test_update_keeps_the_published_mod_ini_and_nothing_the_game_wrote(fake):
         os.path.join(dist, "data", "quartermaster", "core.aix"))
     assert not os.path.exists(os.path.join(target, "data", "gui"))
     assert any("publishedfileid 3600000001" in ln for ln in lines)
+    # While the folder names the item the game never registers the subscribed
+    # copy (runs wsclaim1/wsplain1): the author is told.
+    assert any("Workshop item 3600000001, the game does not load the subscribed copy" in ln
+               for ln in lines)
     assert not os.path.exists(os.path.join(os.path.dirname(dist), "Quartermaster.update"))
     assert listing(game) == ["Quartermaster", "SW_Frontline_Protocol", "mods.ini"]
 
@@ -916,6 +920,7 @@ def test_update_says_when_no_workshop_item_is_named_yet(fake):
     lines = []
     hbuild.update(dist, game, save, out=lines.append)
     assert any("names no Workshop item yet" in ln for ln in lines)
+    assert not any("subscribed copy" in ln for ln in lines)
 
 
 def test_update_takes_dists_mod_ini_while_no_workshop_item_is_named(fake):

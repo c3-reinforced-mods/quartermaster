@@ -1910,7 +1910,11 @@ def update(dist_mod=DIST_MOD, game_dir=GAME, save_dir=None, dry_run=False, out=p
     (mod_ini). --undeploy then --deploy would replace it, and the next upload
     would make a second Workshop item instead of a new version of the first.
     Which keys the Mod Manager writes into the local file on an upload is not
-    known yet, so none is edited: the whole file stays as it is.
+    known yet, so none is edited: the whole file stays as it is. While a
+    folder in mods\ names the item, the game never registers the subscribed
+    copy (docs/research/context-2026-09-27.md, runs wsclaim1/wsplain1): the
+    note below says so, since a test of the Workshop copy needs this folder
+    out of mods\ and an update needs it back.
 
     Every other file is dist's, and a file dist does not have is removed: the
     outputs Quartermaster writes into its own folder while the game runs are
@@ -1951,6 +1955,9 @@ def update(dist_mod=DIST_MOD, game_dir=GAME, save_dir=None, dry_run=False, out=p
            "from dist" if fresh else "kept", published if published is not None else "missing"))
     if published in (None, "0"):
         out("note: this mod.ini names no Workshop item yet: an upload makes a new one")
+    else:
+        out("note: while mods\\%s names Workshop item %s, the game does not load the "
+            "subscribed copy" % (MOD_NAME, published))
     if dry_run:
         return files
     stage = os.path.join(os.path.dirname(os.path.abspath(dist_mod)), MOD_NAME + ".update")

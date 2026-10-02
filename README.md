@@ -51,7 +51,9 @@ python tools/hbuild.py --vanilla-idx  # also regenerates data/quartermaster/vani
 `dist/` holds files of the game itself and is never part of the repository. `--deploy`
 copies the build into the game's `mods\Quartermaster`; `--update` replaces an installed
 copy and keeps its mod.ini once it names a Workshop item (its id after an upload), else
-takes the build's.
+takes the build's. While that folder is in `mods\`, the game does not load the subscribed
+copy of the item: to play the Workshop copy, move the folder out of `mods\`, and back
+before the next upload.
 
 ## Tests
 
