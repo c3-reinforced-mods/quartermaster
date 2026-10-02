@@ -597,10 +597,11 @@ def test_quartermaster_builds_with_zero_findings_offline():
                   b"qmPlan", b"qmFingerprint"):
         assert b"   Name = %s\r\n" % state in core
     assert PREFIX + b"   Log('[qm] '+qmMsg);\r\n" in core
-    assert PREFIX + b"qmLog('boot version '+'0.1.2'+' hook='" in core
+    assert PREFIX + b"qmLog('boot version '+'0.1.3'+' hook='" in core
     # 0.1.0, the v0.1 beta (2026-09-30); 0.1.1 and 0.1.2, the first Workshop
-    # updates, no change in behaviour (2026-10-02)
-    assert hbuild.QM_VERSION == "0.1.2"
+    # updates, no change in behaviour (2026-10-02); 0.1.3, the guard judges the
+    # mods switched on since the last start that booted (2026-10-03)
+    assert hbuild.QM_VERSION == "0.1.3"
     # Build variables arrive as literals: the S5 list, the hash constants.
     assert (b"'|gui\\menu.inc\\cameracontrol.inc|gui\\menu.inc\\doprogress.inc|"
             b"gui\\menu.inc\\eventmainmenu.inc|gui\\menu.inc\\initminimap.inc|"
