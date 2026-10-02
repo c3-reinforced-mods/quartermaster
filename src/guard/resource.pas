@@ -12,9 +12,13 @@ requires: guardstamp, h1mul, h1mod, h2mul, h2mod
 //! here stops the game before anything can recover it.
 //!
 //! Two things it puts right before they can go wrong:
-//!   - a new mod that ships a global script an enabled mod ships already is
-//!     taken out of this start with SteamSyncWorkshopItems (verdict 6) and
-//!     switched off in mods.ini;
+//!   - a mod it does not trust that ships a global script an enabled mod
+//!     ships already is taken out of this start with SteamSyncWorkshopItems
+//!     (verdict 6) and switched off in mods.ini. Trusted are the mods of the
+//!     last start that booted (compiled.cfg, written by qmGlobals); without
+//!     that record the mods of known.cfg, as until 0.1.2 - when a known mod
+//!     switched on in modman next to a clashing one went through (32 at once
+//!     on 2026-10-02, "Error compiling scripts");
 //!   - Quartermaster loads last: an enabled mod after it that ships one of its
 //!     hook files would replace the hook, and Quartermaster would boot late or
 //!     not at all and never restart into its own order (proof run p4 of
@@ -109,9 +113,56 @@ begin
    end;
 end;
 
-// Every registered mod: 0 off or Quartermaster, 1 known and on, 2 new and on,
-// 3 new and kept, 4 new and switched off. Without a known.cfg (a first boot)
-// every mod counts as known: nothing is switched off.
+// The mods of the last start that booted (ref/guard.py compiled_dirs): a
+// count of at least 1 - a boot always has Quartermaster on - or no record.
+var qmGdGood : String = '|';
+var qmGdHaveC : Boolean = False;
+if (qmGdWhy='') then
+begin
+   var qmGdCc : Integer = ParserSelectByKey('qm_guard_compiled');
+   if (qmGdCc=0) then
+   qmGdCc := ParserCreate('qm_guard_compiled');
+   ParserClearByHandle(qmGdCc);
+   if (FileAge(qmGdSave+'compiled.cfg')<>-1) then
+   if (ParserLoadFromFileByHandle(qmGdCc, qmGdSave+'compiled.cfg')) then
+   begin
+      var qmGdCn : Integer = ParserGetIntValueByKeyByHandle(qmGdCc, 'n');
+      if (qmGdCn>512) then
+      qmGdCn := 512;
+      if (qmGdCn>0) then
+      begin
+         qmGdHaveC := True;
+         for qmGdK:=0 to qmGdCn-1 do
+         begin
+            qmGdV := StrToLowerCase(ParserGetValueByKeyByHandle(qmGdCc, 'd'+IntToStr(qmGdK)));
+            while (StrPos('/', qmGdV)>0) do
+            qmGdV := StrReplace(qmGdV, '/', '\');
+            qmGdGood := qmGdGood+qmGdV+'|';
+         end;
+      end;
+   end;
+end;
+// What the trust comes from (ref/guard.py trusted_set): compiled, known, none.
+var qmGdBasis : String = '-';
+var qmGdTrust : String = '|';
+if (qmGdWhy='') then
+begin
+   qmGdBasis := 'none';
+   if (qmGdHave) then
+   begin
+      qmGdBasis := 'known';
+      qmGdTrust := qmGdKnown;
+   end;
+   if (qmGdHaveC) then
+   begin
+      qmGdBasis := 'compiled';
+      qmGdTrust := qmGdGood;
+   end;
+end;
+
+// Every registered mod: 0 off or Quartermaster, 1 trusted and on, 2 not
+// trusted and on, 3 not trusted and kept, 4 not trusted and switched off.
+// Without a record (a first boot) every mod is trusted: nothing is switched off.
 var qmGdN : Integer = ModLibraryGetCount;
 if (qmGdN>512) then
 qmGdN := 512;
@@ -178,8 +229,8 @@ begin
       if (not qmGdDis) and (not ModLibGetFileExist(qmGdI, 'data\quartermaster\core.aix')) then
       begin
          qmGdState[qmGdI] := 1;
-         if (qmGdOk) and (qmGdHave) then
-         if (StrPos('|'+qmGdFold[qmGdI]+'|', qmGdKnown)=0) then
+         if (qmGdOk) and (qmGdBasis<>'none') then
+         if (StrPos('|'+qmGdFold[qmGdI]+'|', qmGdTrust)=0) then
          qmGdState[qmGdI] := 2;
          qmGdFp := ParserSelectByKey('qm_guard_files');
          ParserClearByHandle(qmGdFp);
@@ -192,11 +243,11 @@ begin
          qmGdFiles[qmGdI] := qmGdFiles[qmGdI]+'dmscript.source|';
       end;
    end;
-   // Pass 1: the known mods claim their global scripts.
+   // Pass 1: the trusted mods claim their global scripts.
    for qmGdI:=0 to qmGdN-1 do
    if (qmGdState[qmGdI]=1) and (StrLength(qmGdFiles[qmGdI])>1) then
    qmGdClaim := qmGdClaim+SubStr(qmGdFiles[qmGdI], 2, StrLength(qmGdFiles[qmGdI])-1);
-   // Pass 2: each new mod, in load order, loses to a claim or claims its own.
+   // Pass 2: each other mod, in load order, loses to a claim or claims its own.
    for qmGdI:=0 to qmGdN-1 do
    if (qmGdState[qmGdI]=2) then
    begin
@@ -225,8 +276,8 @@ begin
          qmGdState[qmGdI] := 4;
          qmGdOffN := qmGdOffN+1;
          qmGdOffKey := qmGdOffKey+qmGdFold[qmGdI]+'|';
-         // Who claimed it: the first known mod that ships it, else the first
-         // new mod kept before this one.
+         // Who claimed it: the first trusted mod that ships it, else the first
+         // mod kept before this one.
          for qmGdJ:=0 to qmGdN-1 do
          if (qmGdBy[qmGdI]=-1) and (qmGdState[qmGdJ]=1) and (StrPos('|'+qmGdHit[qmGdI]+'|', qmGdFiles[qmGdJ])>0) then
          qmGdBy[qmGdI] := qmGdJ;
@@ -271,7 +322,7 @@ begin
    if (qmGdOffN=0) and (qmGdLate=0) then
    begin
       qmGdWhy := 'clean';
-      if (not qmGdHave) then
+      if (qmGdBasis='none') then
       qmGdWhy := 'first-boot';
    end;
 end;
@@ -433,4 +484,4 @@ begin
    ParserSetValueByKeyByHandle(qmGdCp, 'n', IntToStr(qmGdK));
    ParserSaveToFileByHandle(qmGdCp, qmGdSave+'compile.cfg');
 end;
-log('[qm-guard] '+qmGdWhy+' mods='+IntToStr(qmGdN)+' age='+IntToStr(qmGdAge)+' game='+qmGdStamp);
+log('[qm-guard] '+qmGdWhy+' mods='+IntToStr(qmGdN)+' age='+IntToStr(qmGdAge)+' game='+qmGdStamp+' basis='+qmGdBasis);

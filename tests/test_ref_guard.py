@@ -83,12 +83,79 @@ def test_mods_without_global_scripts_are_never_switched_off():
     assert G.decide(mods, known(b"1325221799")).why == b"clean"
 
 
-def test_known_mods_are_the_players_choice_even_when_they_clash():
+def test_without_a_compiled_record_known_mods_are_the_players_choice_even_when_they_clash():
+    # Quartermaster before 0.1.3 wrote no compiled.cfg: known.cfg is the basis.
     mods = [gmod(b"1325221799"), gmod(b"1450025705"), QM]
-    assert G.decide(mods, known(b"1325221799", b"1450025705")).why == b"clean"
+    plan = G.decide(mods, known(b"1325221799", b"1450025705"))
+    assert (plan.why, plan.basis) == (b"clean", b"known")
     # ...but the window and the report name the clash.
     c = G.conflicts(mods)
     assert c[1] == [(b"lib\\unit.script", 0)] and (b"lib\\unit.script", 1) in c[0]
+
+
+def dirs(*keys):
+    return [(k if k.startswith(b"mods\\") else WS + k) for k in keys]
+
+
+def test_a_known_mod_switched_on_since_the_last_start_that_booted_is_judged():
+    """The owner's start of 2026-10-02: every mod known, the last start that
+    booted had only the Unofficial Patch on, then 32 Workshop mods were
+    switched on in modman at once - the guard said `clean` and the start
+    stopped at "Error compiling scripts". With the record, one of each script
+    stays: the first in load order."""
+    order = [b"mods\\UnofficialPatch", b"873048118", b"1325221799", b"3579561908",
+             b"855882129", b"1255766623", b"1450025705", b"917824662", b"QM"]
+    mods = [QM if k == b"QM" else gmod(k) for k in order]
+    every = known(*[k for k in order if k != b"QM"] + [b"mods\\Quartermaster"])
+    assert G.decide(mods, every).why == b"clean"                     # 0.1.2: no record
+    plan = G.decide(mods, every, compiled=dirs(b"mods\\UnofficialPatch", b"mods\\Quartermaster"))
+    assert (plan.action, plan.why, plan.basis) == (b"off", b"conflict", b"compiled")
+    off = dict((mods[i].title, (f, mods[j].title)) for i, f, j in plan.off)
+    # State vs Country, the first with libraries, claims them; ZoomOut! ships none.
+    assert off == {
+        b"3579561908": (b"lib\\control.script", b"1325221799"),
+        b"855882129": (b"lib\\miscext2.script", b"1325221799"),
+        b"1255766623": (b"lib\\classes.script", b"1325221799"),
+        b"1450025705": (b"lib\\unit.script", b"1325221799"),
+        b"917824662": (b"dmscript.global", b"1325221799"),
+    }
+
+
+def test_mods_of_the_last_start_that_booted_are_trusted_even_when_they_clash():
+    # That set compiled: whatever the names say, the guard leaves it alone.
+    mods = [gmod(b"1325221799"), gmod(b"1450025705"), QM]
+    plan = G.decide(mods, known(b"1325221799"), compiled=dirs(b"1325221799", b"1450025705"))
+    assert (plan.why, plan.basis) == (b"clean", b"compiled")
+
+
+def test_the_record_decides_over_known_cfg():
+    # Cannons is not in known.cfg but was on in the start that booted (the
+    # record is newer); State vs Country is known but was off then.
+    mods = [gmod(b"1450025705"), gmod(b"1325221799"), QM]
+    plan = G.decide(mods, known(b"1325221799"), compiled=dirs(b"1450025705"))
+    assert plan.off == [(1, b"lib\\unit.script", 0)] and plan.basis == b"compiled"
+
+
+def test_a_mod_switched_off_since_then_claims_nothing():
+    # The set compiled with State vs Country; now it is off and Cannons is on.
+    mods = [gmod(b"1325221799", on=False), gmod(b"1450025705"), QM]
+    assert G.decide(mods, known(b"1325221799"), compiled=dirs(b"1325221799")).why == b"clean"
+
+
+def test_a_record_without_a_count_is_no_record():
+    assert G.compiled_dirs({}) is None
+    assert G.compiled_dirs({b"n": b"0", b"d0": b"x"}) is None
+    assert G.compiled_dirs({b"n": b"x"}) is None
+    assert G.compiled_dirs({b"n": b"2", b"d0": b"a"}) == [b"a", b""]
+    assert G.compiled_dirs(dict(G.compiled_values([b"a", b"b"]))) == [b"a", b"b"]
+    assert len(G.compiled_dirs({b"n": b"600"})) == 512
+
+
+def test_the_basis_is_none_on_a_first_boot_and_not_read_in_a_sync():
+    mods = [gmod(b"1325221799"), gmod(b"1450025705"), QM]
+    assert G.decide(mods, None).basis == b"none"
+    assert G.decide(mods, None, compiled=dirs(b"1325221799")).basis == b"compiled"
+    assert G.decide(mods, None, mp_sync=True, compiled=dirs(b"1325221799")).basis == b"-"
 
 
 def test_clash_pairs_name_the_first_shared_file_of_the_earlier_mod():

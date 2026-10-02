@@ -413,7 +413,11 @@ the same one cannot both load (twin: `ref/guard.py`, which has the rules).
   `tick`); the boot saves it back with `restarted` = 0 (the guard's loop test
   is disarmed once the restarted start boots), and qmTick with `shown` = 1
   when the notice is on the screen - a first generation's own restart may
-  come in between.
+  come in between. It also records the enabled mods of the start in
+  `<save>\quartermaster\compiled.cfg` (`d<k>`, `n`; ref/guard.py
+  `compiled_values`) when they differ from the file, never on an Apply or in
+  a multiplayer sync: the set the guard trusts at the next start (plan S17,
+  revised 2026-10-02). The Boot line ends `compiled=<n> written|same|-`.
 - **Run switches** (a test run's seeded `<save>\quartermaster\`, no player has
   them): `qm_show_ui.flag` opens the window on the first main-menu frame
   (`qm_rt` `uishow`); `qm_skirmish.flag` walks the game into a skirmish on a

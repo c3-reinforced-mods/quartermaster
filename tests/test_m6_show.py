@@ -600,7 +600,9 @@ def test_the_guard_notice_lists_the_mods_it_switched_off():
     eng = show(model(ROWS, mode=3, gdln=2, gdl0=b"Cannons (lib\\unit.script, State vs Country)",
                      gdl1=b"Other (dmscript.global, Patrol)"))
     texts = dict((t.name, t.text) for t in eng.under(win(eng, b"gnotice.gwnd").handle, "text"))
-    assert texts[b"gtext"] == b"Quartermaster switched off new mods"
+    # Not "new mods" since 0.1.3: a mod switched on in modman is judged too.
+    assert texts[b"gtext"] == b"Quartermaster switched off clashing mods"
+    assert b"switched these mods off" in texts[b"gwhy"] and b"new" not in texts[b"gwhy"]
     assert texts[b"glist"] == b"Cannons (lib\\unit.script, State vs Country)" + BR + \
         b"Other (dmscript.global, Patrol)"
     assert buttons(eng, b"gnotice")[b"bok"] == (b"OK", True)

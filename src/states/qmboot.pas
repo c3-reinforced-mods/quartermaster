@@ -249,7 +249,7 @@ begin
       for qmBtK:=0 to ParserGetIntValueByKeyByHandle(qmBtGl, 'gdn')-1 do
       begin
          qmBtGs := IntToStr(qmBtK);
-         qmBtLine('WARN', 'Switched off at the start, before the scripts compiled: the new mod '+ParserGetValueByKeyByHandle(qmBtGl, 'gdt'+qmBtGs)+'. It ships scripts\'+ParserGetValueByKeyByHandle(qmBtGl, 'gdf'+qmBtGs)+', and so does '+ParserGetValueByKeyByHandle(qmBtGl, 'gdo'+qmBtGs)+'; with both the game stops at "Error compiling scripts".');
+         qmBtLine('WARN', 'Switched off at the start, before the scripts compiled: the mod '+ParserGetValueByKeyByHandle(qmBtGl, 'gdt'+qmBtGs)+'. It ships scripts\'+ParserGetValueByKeyByHandle(qmBtGl, 'gdf'+qmBtGs)+', and so does '+ParserGetValueByKeyByHandle(qmBtGl, 'gdo'+qmBtGs)+'; with both the game stops at "Error compiling scripts".');
       end;
       ParserSetIntValueByKeyByHandle(qmBtRt, 'gdshow', 1);
       ParserSetIntValueByKeyByHandle(qmBtRt, 'tick', 1);

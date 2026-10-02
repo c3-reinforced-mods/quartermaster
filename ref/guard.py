@@ -24,20 +24,32 @@ The guard
 Quartermaster's `data\scripts\resource.script` is the vanilla file with the
 guard after it, so it runs before the libraries compile, after
 SteamPrepareWorkshop has registered and switched on every new subscription
-(docs/research/guard-probes.md verdicts 1-3). It takes *new* mods out of the
-start when they ship a global script that an enabled mod already ships:
+(docs/research/guard-probes.md verdicts 1-3). It takes the mods it does not
+trust out of the start when they ship a global script that an enabled mod
+already ships:
 
-  - known mods are the dirs of <save>\quartermaster\known.cfg (ref/boot.py
-    known.cfg, either flag); no file: a first boot, nothing is new. A dir
-    the guard cannot compare safely (a byte outside printable ASCII, or `~`,
-    which known.cfg escapes) counts as known: the guard never switches off
-    what it cannot identify;
-  - pass 1: every enabled known mod claims its global scripts, in load
-    order; pass 2: each enabled new mod, in load order, is switched off when
-    one of its global scripts is claimed already (the first such file, in
-    its own list order, names the conflict), else it claims its own;
+  - trusted are the mods of the last start that booted - the dirs of
+    <save>\quartermaster\compiled.cfg, which the boot writes (qmGlobals,
+    `compiled_values`): a boot means its libraries compiled. Without that
+    file (Quartermaster before 0.1.3) the dirs of known.cfg (ref/boot.py
+    known.cfg, either flag); without either, a first boot: every mod is
+    trusted, nothing is switched off. A dir the guard cannot compare safely
+    (a byte outside printable ASCII, or `~`, which the files escape) counts
+    as trusted: the guard never switches off what it cannot identify;
+  - pass 1: every enabled trusted mod claims its global scripts, in load
+    order; pass 2: each other enabled mod - a new subscription, or a mod
+    switched on outside Quartermaster since that start - in load order, is
+    switched off when one of its global scripts is claimed already (the
+    first such file, in its own list order, names the conflict), else it
+    claims its own;
   - Quartermaster itself and any other copy of it (a mod with
     data\quartermaster\core.aix) are neither judged nor claim anything.
+
+Until 0.1.2 only known.cfg was the basis, so a mod the guard had seen once
+was trusted for good: on 2026-10-02 the owner switched 32 known Workshop
+mods on in modman at once (State vs Country, its ++, Rise of America and its
++, 19th Century and more, all with the same libraries), the guard logged
+`clean`, and the start stopped at "Error compiling scripts".
 
 It does nothing in the multiplayer sync (StringRegister7 set, or
 <save>\mods.restore present: plan S8), on a game whose resource.script is
@@ -61,6 +73,11 @@ switches every local mod off and moves the enabled Workshop items first,
 verdict 6), write mods.ini back as it was loaded with only those mods off,
 write the note <save>\quartermaster\guard.cfg, and restart.
 
+The record of the last start that booted (compiled.cfg) is a flat file as
+well: d<k> the dir of each enabled mod in the engine's order (Quartermaster
+too), n how many. The boot writes it when it differs, never on an Apply (that
+set has not compiled yet) or in a multiplayer sync (that set is the host's).
+
 The note (guard.cfg) is the engine parser's flat file, keys:
   restarted  1; the boot sets 0 once the restarted start booted (the loop
              test is disarmed then)
@@ -74,14 +91,15 @@ The note (guard.cfg) is the engine parser's flat file, keys:
              that ships it already (dir and title)
 """
 
-__all__ = ["LIB", "GLOBAL", "SOURCE", "fold", "comparable", "global_names", "GMod",
-           "known_set", "is_known", "quarantine", "conflicts", "first_shared",
-           "conflict_pairs", "Plan", "decide",
-           "note_values", "note_key", "game_stamp"]
+__all__ = ["LIB", "GLOBAL", "SOURCE", "COMPILED_REL", "fold", "comparable", "global_names",
+           "GMod", "known_set", "trusted_set", "is_known", "quarantine", "conflicts",
+           "first_shared", "conflict_pairs", "Plan", "decide",
+           "note_values", "note_key", "game_stamp", "compiled_values", "compiled_dirs"]
 
 LIB = b"lib\\"
 GLOBAL = b"dmscript.global"
 SOURCE = b"dmscript.source"
+COMPILED_REL = b"quartermaster\\compiled.cfg"
 
 
 def game_stamp(data):
@@ -141,20 +159,33 @@ def known_set(entries):
     return set(fold(d) for d, _new in entries)
 
 
+def trusted_set(known_entries, compiled):
+    """`(folded dirs, basis)`: the mods the guard trusts and why - those of the
+    last start that booted (`compiled`, the dirs of compiled.cfg) when there
+    is such a record, else known.cfg's, else None (a first boot, basis
+    b"none")."""
+    if compiled is not None:
+        return set(fold(d) for d in compiled), b"compiled"
+    if known_entries is not None:
+        return known_set(known_entries), b"known"
+    return None, b"none"
+
+
 def is_known(d, known):
     return not comparable(d) or fold(d) in known
 
 
-def quarantine(mods, known):
-    """`[(i, file, j)]`: mod i is switched off, because mod j claims `file`."""
+def quarantine(mods, trusted):
+    """`[(i, file, j)]`: mod i is switched off, because mod j claims `file`.
+    `trusted`: the folded dirs of `trusted_set`."""
     claimed = {}
     for i, m in enumerate(mods):
-        if m.on and not m.is_self and is_known(m.dir, known):
+        if m.on and not m.is_self and is_known(m.dir, trusted):
             for f in m.files:
                 claimed.setdefault(f, i)
     off = []
     for i, m in enumerate(mods):
-        if not m.on or m.is_self or is_known(m.dir, known):
+        if not m.on or m.is_self or is_known(m.dir, trusted):
             continue
         hit = next(((f, claimed[f]) for f in m.files if f in claimed), None)
         if hit is not None:
@@ -238,41 +269,66 @@ def late_hooks(mods, off):
 class Plan(object):
     """`action` b"off" (switch `off` off and/or move Quartermaster last -
     `late` non-empty - write the note, restart) or b"none"; `why` says which
-    rule decided; `moved` whether Quartermaster's entry moves."""
+    rule decided; `moved` whether Quartermaster's entry moves; `basis` what
+    the trust came from (`trusted_set`), b"-" when the guard read no record
+    (a multiplayer sync, another game version)."""
 
-    __slots__ = ("action", "why", "off", "key", "late", "moved")
+    __slots__ = ("action", "why", "off", "key", "late", "moved", "basis")
 
-    def __init__(self, action, why, off=(), key=b"", late=(), moved=False):
+    def __init__(self, action, why, off=(), key=b"", late=(), moved=False, basis=b"-"):
         self.action, self.why, self.off, self.key = action, why, list(off), key
-        self.late, self.moved = list(late), moved
+        self.late, self.moved, self.basis = list(late), moved, basis
 
     def __repr__(self):
-        return "Plan(%s, %s, %r, late=%r)" % (self.action, self.why, self.off, self.late)
+        return "Plan(%s, %s, %r, late=%r, basis=%s)" % (self.action, self.why, self.off,
+                                                        self.late, self.basis)
 
 
 def decide(mods, known_entries, mp_sync=False, restore_file=False, same_game=True,
-           previous=None):
+           previous=None, compiled=None):
     """The guard's decision for one start. `previous` is the note of the
-    previous start (`{key: value}`) or None."""
-    known = known_set(known_entries)
+    previous start (`{key: value}`) or None; `compiled` the dirs of
+    compiled.cfg (`compiled_dirs`) or None."""
     if mp_sync or restore_file:
         return Plan(b"none", b"mp-sync")
     if not same_game:
         return Plan(b"none", b"game-version")
-    # Without known.cfg nothing is new, so nothing is switched off; the load
-    # order is still put right.
-    off = quarantine(mods, known) if known is not None else []
+    trusted, basis = trusted_set(known_entries, compiled)
+    # Without a record every mod is trusted, so nothing is switched off; the
+    # load order is still put right.
+    off = quarantine(mods, trusted) if trusted is not None else []
     late = late_hooks(mods, off)
     if not off and not late:
-        return Plan(b"none", b"first-boot" if known is None else b"clean")
+        return Plan(b"none", b"first-boot" if trusted is None else b"clean", basis=basis)
     key = note_key(mods, off)
     me = find_self(mods)
     if late:
         key += b"order:" + fold(mods[me].dir) + b"|"
     moved = bool(late) and me != len(mods) - 1
     if previous is not None and previous.get(b"restarted") == b"1" and previous.get(b"key") == key:
-        return Plan(b"none", b"loop", off, key, late, moved)
-    return Plan(b"off", b"conflict" if off else b"order", off, key, late, moved)
+        return Plan(b"none", b"loop", off, key, late, moved, basis)
+    return Plan(b"off", b"conflict" if off else b"order", off, key, late, moved, basis)
+
+
+def compiled_values(dirs):
+    """compiled.cfg's keys for the enabled mods of a start that booted, in
+    the engine's order (qmGlobals writes them in this order)."""
+    return [(b"d%d" % k, d) for k, d in enumerate(dirs)] + [(b"n", b"%d" % len(dirs))]
+
+
+def compiled_dirs(keys):
+    """The dirs of compiled.cfg's keys (`{key: value}`, keys lower case as the
+    engine's parser folds them), or None when `n` is missing or not a count
+    of at least 1: a boot always has Quartermaster enabled, so such a file
+    is not a record of one, and the guard falls back to known.cfg. It reads
+    at most 512 dirs."""
+    try:
+        n = int(keys.get(b"n", b""))
+    except ValueError:
+        return None
+    if n < 1:
+        return None
+    return [keys.get(b"d%d" % k, b"") for k in range(min(n, 512))]
 
 
 def note_values(mods, plan):

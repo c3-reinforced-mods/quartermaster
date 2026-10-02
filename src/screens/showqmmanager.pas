@@ -48,7 +48,7 @@ requires:
 //! ends - qmTick draws it too before a restart it runs itself, so the long
 //! shutdown does not look like a freeze. The vanilla restart shows nothing
 //! (onworkshopautoupdate.inc:4-11). Mode 3 is the start-up guard's notice
-//! (plan S17): drawn over the window, the new mods it switched off before
+//! (plan S17): drawn over the window, the mods it switched off before
 //! the scripts compiled (gdl<k>), one OK button.
 //!
 //! A pending set with a global-script clash (qmUiAct pcn, pc<k>) says so on
@@ -878,10 +878,12 @@ begin
    var qmSmGMask : Integer = _gui_CreateImageActive('gmask', qmSmGNote, gc_gui_material_black, gc_halParentLeft, gc_valParentTop, 0, 0, qmSmVw, qmSmVh, qmTagMask, qmSmEventstate, '', qmSmBupdate);
    SetGUIElementUserBlend(qmSmGMask, 0.5);
    var qmSmGWnd : Integer = _gui_CreateSkinWindow('gwnd', qmSmGNote, gc_halParentMiddle, gc_valParentMiddle, 0, 0, 820, 250+qmSmGn*qmSmLh, 1, qmSmBupdate);
-   // The guard's notice.
-   qmSmText := 'Quartermaster switched off new mods';
+   // The guard's notice. Since 0.1.3 the mods it switches off are not only new
+   // subscriptions but any mod switched on since the last start that worked
+   // (modman), so the text no longer calls them new.
+   qmSmText := 'Quartermaster switched off clashing mods';
    _gui_CreateText('gtext', qmSmGWnd, qmSmText, gc_halParentMiddle, gc_valParentTop, 0, 34, 0, 0, gc_halMiddle, gc_valMiddle, gc_font_serif_16, qmSmHeadColor, qmSmBupdate);
-   qmSmText := 'Each of them replaces a core script that an active mod replaces too. With both, the game would stop at "Error compiling scripts", so Quartermaster switched the new mods off and restarted the game:';
+   qmSmText := 'Each of them replaces a core script that an active mod replaces too. With both, the game would stop at "Error compiling scripts", so Quartermaster switched these mods off and restarted the game:';
    qmSmText := GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmText, 720);
    _gui_CreateText('gwhy', qmSmGWnd, qmSmText, gc_halParentLeft, gc_valParentTop, 50, 62, 720, 3*qmSmLh+4, gc_halLeft, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
    qmSmBody := '';

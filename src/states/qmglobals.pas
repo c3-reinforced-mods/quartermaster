@@ -22,6 +22,16 @@ requires:
 //! notice once; the note is then saved with `restarted` = 0, which is also
 //! what disarms the guard's loop test for a later start.
 //!
+//! A boot also records the mods this start compiled with:
+//! <save>\quartermaster\compiled.cfg, d<k> every enabled mod's dir in the
+//! engine's order (Quartermaster too) and n (ref/guard.py compiled_values).
+//! Quartermaster running means the libraries compiled, so this is the set the
+//! guard trusts at the next start; a mod switched on outside Quartermaster
+//! since then is judged like a new subscription (revised 2026-10-02, 0.1.3).
+//! Not on an Apply (that set has not compiled yet), not in a multiplayer sync
+//! (that set is the host's, the player's own comes back after it - the
+//! guard's own test), and written only when it differs.
+//!
 //! Keys of qm_glob (docs/ui.md):
 //!   n                    registered mods (at most 256)
 //!   dir<i> tit<i>        the engine's dir and the title shown
@@ -51,6 +61,8 @@ var qmGbK : Integer;
 var qmGbF : String;
 var qmGbL : String;
 var qmGbWith : Integer = 0;
+var qmGbCd : array [0..255] of String;
+var qmGbCk : Integer = 0;
 for qmGbI:=0 to qmGbN-1 do
 begin
    //! For a folder without mod.ini the engine leaves the title and `last`
@@ -58,6 +70,11 @@ begin
    qmGbTit := '';
    qmGbLast := '';
    ModLibraryGetData(qmGbI, qmGbTag, qmGbDir, qmGbLast, qmGbTit, qmGbOwn, qmGbDesc, qmGbTags, qmGbUrl, qmGbNote, qmGbNumf, qmGbVis, qmGbDis, qmGbAcc, qmGbBan, qmGbRoot);
+   if (not qmGbDis) then
+   begin
+      qmGbCd[qmGbCk] := qmGbDir;
+      qmGbCk := qmGbCk+1;
+   end;
    if (qmGbTit='') then
    qmGbTit := qmGbLast;
    if (qmGbTit='') then
@@ -154,4 +171,37 @@ begin
 end;
 ParserSetIntValueByKeyByHandle(qmGbG, 'gdn', qmGbGn);
 ParserSetIntValueByKeyByHandle(qmGbG, 'gdnew', qmGbFresh);
-qmLog('globals mods='+IntToStr(qmGbN)+' with global scripts='+IntToStr(qmGbWith)+' clashes='+IntToStr(qmGbCn)+' guard note='+IntToStr(qmGbGn)+' fresh='+IntToStr(qmGbFresh));
+
+//! The record of this start's mods for the guard (see the head of this file).
+var qmGbCw : String = '-';
+if (not qmGbApply) and (StringRegister7='') and (FileAge(GetAppSaveDirectoryPath+'mods.restore')=-1) then
+begin
+   var qmGbCp : String = GetAppSaveDirectoryPath+'quartermaster\compiled.cfg';
+   var qmGbCr : Integer = ParserSelectByKey('qm_glob_compiled');
+   if (qmGbCr=0) then
+   qmGbCr := ParserCreate('qm_glob_compiled');
+   ParserClearByHandle(qmGbCr);
+   var qmGbSame : Boolean = False;
+   if (FileAge(qmGbCp)<>-1) then
+   if (ParserLoadFromFileByHandle(qmGbCr, qmGbCp)) then
+   if (ParserGetValueByKeyByHandle(qmGbCr, 'n')=IntToStr(qmGbCk)) then
+   begin
+      qmGbSame := True;
+      for qmGbK:=0 to qmGbCk-1 do
+      if (ParserGetValueByKeyByHandle(qmGbCr, 'd'+IntToStr(qmGbK))<>qmGbCd[qmGbK]) then
+      qmGbSame := False;
+   end;
+   qmGbCw := 'same';
+   if (not qmGbSame) then
+   begin
+      ParserClearByHandle(qmGbCr);
+      for qmGbK:=0 to qmGbCk-1 do
+      ParserSetValueByKeyByHandle(qmGbCr, 'd'+IntToStr(qmGbK), qmGbCd[qmGbK]);
+      ParserSetValueByKeyByHandle(qmGbCr, 'n', IntToStr(qmGbCk));
+      if (ParserSaveToFileByHandle(qmGbCr, qmGbCp)) then
+      qmGbCw := 'written'
+      else
+      qmGbCw := 'not-saved';
+   end;
+end;
+qmLog('globals mods='+IntToStr(qmGbN)+' with global scripts='+IntToStr(qmGbWith)+' clashes='+IntToStr(qmGbCn)+' guard note='+IntToStr(qmGbGn)+' fresh='+IntToStr(qmGbFresh)+' compiled='+IntToStr(qmGbCk)+' '+qmGbCw);

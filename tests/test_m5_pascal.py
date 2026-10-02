@@ -39,6 +39,23 @@ PAS.BYREF_NATIVES["modlibrarygetdata"] = tuple(range(1, 16))
 DOTTED = ((b"gMap.gamestage", b"qmxgmapgamestage"),)
 
 
+def flat(keys):
+    """A flat parser file as the engine writes one (guard.cfg, compile.cfg,
+    compiled.cfg; test_m4_pascal)."""
+    return b"".join(line + b"\r\n" for line in [b"section.begin"]
+                    + [b"   " + k + b" = " + v for k, v in keys] + [b"section.end", b""])
+
+
+def flat_keys(data):
+    """{key: value} of a flat parser file, keys folded as the engine's parser."""
+    out = {}
+    for line in data.split(b"\r\n"):
+        if line.startswith(b"   ") and b" = " in line:
+            key, _eq, value = line[3:].partition(b" = ")
+            out[key.lower()] = value.strip(b" ")
+    return out
+
+
 class IniNode(object):
     """A parser node with children by index (mods.ini's tree)."""
 
@@ -208,6 +225,11 @@ class Engine(PAS.Engine):
         # CR LF; the engine's parser loads such a file (run m2a3).
         if data.endswith(b" ") and data.rstrip(b" ").endswith(b"\r\n"):
             data = data.rstrip(b" ")
+        if b"[*]" not in data:
+            # A flat parser file (guard.cfg, compile.cfg, compiled.cfg): its keys.
+            # Not "no struct.begin": a one-value .inc is `Code[*] = ;...` (known.cfg).
+            n.keys, n.inc, n.code, n.ini = flat_keys(data), None, None, None
+            return True
         return self._load_inc(n, data)
 
     def _next(self):
@@ -274,6 +296,10 @@ class Engine(PAS.Engine):
             for c in self.nodes[n.ini].children:
                 rows.append(dict(self.nodes[c].keys))
             self.written[path] = O.render_mods_ini([(r[b"dir"], r[b"dis"]) for r in rows])
+            return True
+        if path != INI and n.inc is None and not isinstance(n, IniNode):
+            # Keys set on a parser that loaded no .inc: the engine writes a flat file.
+            self.written[path] = flat(list(n.keys.items()))
             return True
         return PAS.Engine.n_ParserSaveToFileByHandle(self, h, path)
 

@@ -16,7 +16,7 @@ requires:
 //! with no click. docs/ui.md lists the commands and keys.
 //!
 //! Modes (`mode`): 0 browse, 1 the confirm dialog, 2 the restart notice after
-//! a confirmed Apply, 3 the start-up guard's notice (plan S17: the new mods it
+//! a confirmed Apply, 3 the start-up guard's notice (plan S17: the mods it
 //! switched off, shown once over the window; qmTick opens the window with
 //! `gdopen` = 1). While the dialog is open only its answers count; while
 //! the restart notice shows only close does (the restart comes anyway); the

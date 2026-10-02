@@ -40,16 +40,14 @@ def guard_code():
     return tuple(H.render_lines(H.load_guard(), H.guard_variables(VANILLA)))
 
 
-def flat(keys):
-    """A flat parser file as the engine writes one (test_m4_pascal)."""
-    return b"".join(line + b"\r\n" for line in [b"section.begin"]
-                    + [b"   " + k + b" = " + v for k, v in keys] + [b"section.end", b""])
+flat, flat_keys = M5.flat, M5.flat_keys
 
 
 class Engine(M5.Engine):
-    """test_m5_pascal's engine and what only the guard asks of it: the flat
-    parser files (guard.cfg, compile.cfg), Steam, the engine's mod list as a
-    parser and the sync that takes mods out of the running start."""
+    """test_m5_pascal's engine (which loads and saves the flat parser files:
+    guard.cfg, compile.cfg, compiled.cfg) and what only the guard asks of it:
+    Steam, the engine's mod list as a parser and the sync that takes mods out
+    of the running start."""
 
     def __init__(self, *args, **kw):
         self.steam = True
@@ -74,25 +72,6 @@ class Engine(M5.Engine):
         self.synced.append([(r[b"dir"], r[b"dis"]) for r in rows])
         return 0
 
-    def n_ParserSaveToFileByHandle(self, h, path):
-        n = self.nodes[h]
-        if path != INI and n.inc is None:
-            self.written[path] = flat(list(n.keys.items()))
-            return True
-        return M5.Engine.n_ParserSaveToFileByHandle(self, h, path)
-
-    def n_ParserLoadFromFileByHandle(self, h, path):
-        data = self._file(path)
-        if data is not None and path != INI and b"struct.begin" not in data:
-            n = self.nodes[h]
-            n.keys, n.inc, n.code = {}, None, None
-            for line in data.split(b"\r\n"):
-                if line.startswith(b"   ") and b" = " in line:
-                    key, _eq, value = line[3:].partition(b" = ")
-                    n.keys[key.lower()] = value.strip(b" ")
-            return True
-        return M5.Engine.n_ParserLoadFromFileByHandle(self, h, path)
-
 
 class Mod(object):
     def __init__(self, dir, on=True, title=b"", core=False, libs=(), glob=False, src=False,
@@ -105,12 +84,22 @@ class Start(object):
     """One start: the mods in mods.ini order and what the save folder holds."""
 
     def __init__(self, mods, known=None, register7=b"", restore_file=False, age=AGE,
-                 previous=None, compile_prev=None, ini=True, steam=True, game=VANILLA):
+                 previous=None, compile_prev=None, ini=True, steam=True, game=VANILLA,
+                 compiled=None):
         self.mods, self.known, self.register7 = mods, known, register7
         self.restore_file, self.age, self.previous = restore_file, age, previous
         self.compile_prev, self.ini, self.steam = compile_prev, ini, steam
         # The installed resource.script (None: not there at all).
         self.game = game
+        # compiled.cfg: the dirs of the last start that booted (a list), the
+        # file's bytes as they are (bytes), or no file (None).
+        self.compiled = compiled
+
+
+def compiled_bytes(s):
+    if s.compiled is None or isinstance(s.compiled, bytes):
+        return s.compiled
+    return flat(G.compiled_values(s.compiled))
 
 
 def files_of(s):
@@ -138,6 +127,8 @@ def files_of(s):
         files[QSAVE + b"guard.cfg"] = flat(s.previous)
     if s.compile_prev is not None:
         files[QSAVE + b"compile.cfg"] = s.compile_prev
+    if compiled_bytes(s) is not None:
+        files[QSAVE + b"compiled.cfg"] = compiled_bytes(s)
     if s.restore_file:
         files[SAVE + b"mods.restore"] = b"x"
     return files, ages
@@ -159,8 +150,10 @@ def twin(s):
           for m in s.mods]
     previous = dict(s.previous) if s.previous is not None else None
     same = s.game is not None and G.game_stamp(s.game) == G.game_stamp(VANILLA)
+    raw = compiled_bytes(s)
+    compiled = G.compiled_dirs(flat_keys(raw)) if raw is not None else None
     plan = G.decide(gm, s.known, mp_sync=s.register7 != b"", restore_file=s.restore_file,
-                    same_game=same, previous=previous)
+                    same_game=same, previous=previous, compiled=compiled)
     return gm, plan
 
 
@@ -174,6 +167,8 @@ def check(s):
         # start goes on as it is.
         why = b"no-mods-ini"
     assert b"[qm-guard] %s mods=%d age=%d game=" % (why, len(s.mods), s.age) in text, (why, text)
+    last = [l for l in eng.log if l.startswith(b"[qm-guard] %s mods=" % why)][-1]
+    assert last.endswith(b" basis=" + plan.basis), (last, plan.basis)
     note = eng.written.get(QSAVE + b"guard.cfg")
     if why == b"restart":
         assert eng.restarted == ["lan", "steam", "restart"]
@@ -267,6 +262,21 @@ def test_both_at_once_and_a_new_mod_of_its_own_kept():
     (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS),
            compile_prev=flat([(b"n", b"1"), (b"d0", b"mods\\Before"), (b"t0", b"Before")])),
      b"clean"),
+    # compiled.cfg (0.1.3): Cannons is known, but it was off in the last start
+    # that booted - switched on in modman since - so it is judged...
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM]),
+     b"restart"),
+    # ...and a set that booted is trusted as it is, clash or not.
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), compiled=[SVC.dir, QM, CANNONS.dir]),
+     b"clean"),
+    (Start([SVC, QMM, CANNONS], compiled=[SVC.dir, QM]), b"restart"),
+    # A record that is not one (no count, a count of 0): known.cfg decides.
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS),
+           compiled=flat([(b"n", b"0"), (b"d0", SVC.dir)])), b"clean"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=flat([(b"d0", SVC.dir)])),
+     b"clean"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), compiled=[SVC.dir, QM], register7=b"x"),
+     b"mp-sync"),
 ])
 def test_each_rule_decides_as_the_twin(start, why):
     eng, _plan = check(start)
@@ -284,7 +294,8 @@ def test_the_guard_reads_the_stamp_the_twin_computes(game):
     files, ages = files_of(Start([SVC, QMM], known=known(SVC, QMM), game=game))
     eng = Engine(files, ages, mods=[(SVC.dir, True, SVC.tag), (QM, True, b"0")])
     PAS.State(list(code), eng).run()
-    assert eng.log[-1] == b"[qm-guard] clean mods=2 age=%d game=%s" % (AGE, G.game_stamp(game))
+    assert eng.log[-1] == b"[qm-guard] clean mods=2 age=%d game=%s basis=known" % (
+        AGE, G.game_stamp(game))
 
 
 def test_moved_follows_mods_ini_not_the_engines_list():
@@ -336,11 +347,18 @@ def test_random_starts_agree_with_the_twin():
         mods.insert(rng.randint(0, len(mods)), Mod(QM, title=b"Quartermaster", core=True,
                                                    hooks=[hooks[2]]))
         known_mods = [m for m in mods if rng.random() < 0.5] + [mods[0]]
-        start = Start(mods, known=known(*known_mods) if rng.random() < 0.85 else None)
+        # compiled.cfg: none, or the dirs of some of them (a set that booted),
+        # spelled in another case now and then - the guard folds them
+        compiled = None
+        if rng.random() < 0.5:
+            compiled = [m.dir.upper() if rng.random() < 0.2 else m.dir
+                        for m in mods if rng.random() < 0.6] + [QM]
+        start = Start(mods, known=known(*known_mods) if rng.random() < 0.85 else None,
+                      compiled=compiled)
         _eng, plan = check(start)
         if plan.action == b"off" and rng.random() < 0.5:
             # The same start again after its restart: a loop.
-            again = Start(mods, known=start.known,
+            again = Start(mods, known=start.known, compiled=compiled,
                           previous=[(b"restarted", b"1"), (b"key", plan.key)])
             _eng, plan2 = check(again)
             assert plan2.why == b"loop"
@@ -383,9 +401,81 @@ def test_the_boots_clashes_are_the_twins_pairs():
         assert key(b"cn") == b"%d" % len(pairs)
         assert [(int(key(b"ca%d" % k)), int(key(b"cb%d" % k)), key(b"cf%d" % k))
                 for k in range(len(pairs))] == pairs
-        assert b"[qm] globals mods=%d with global scripts=%d clashes=%d guard note=0 fresh=0" % (
-            len(mods), sum(1 for m in mods if not m.core and (m.libs or m.glob or m.src)),
-            len(pairs)) in eng.log
+        assert b"[qm] globals mods=%d with global scripts=%d clashes=%d guard note=0 fresh=0 " \
+            b"compiled=%d written" % (
+                len(mods), sum(1 for m in mods if not m.core and (m.libs or m.glob or m.src)),
+                len(pairs), sum(1 for m in mods if m.on)) in eng.log
+
+
+def compiled_line(eng):
+    return [l for l in eng.log if l.startswith(b"[qm] globals mods=")][-1].rsplit(b" ", 2)[1:]
+
+
+def test_the_boot_records_the_mods_it_compiled_with():
+    """compiled.cfg: every enabled mod in the engine's order, Quartermaster
+    too, as ref/guard.py compiled_values lists them; written when it differs."""
+    off = Mod(W + b"999", on=False, title=b"Off", libs=[b"unit.script"])
+    s = Start([SVC, off, QMM, CANNONS])
+    eng = run_globals(s)
+    want = flat(G.compiled_values([SVC.dir, QM, CANNONS.dir]))
+    assert eng.written[QSAVE + b"compiled.cfg"] == want
+    assert compiled_line(eng) == [b"compiled=3", b"written"]
+    # The same set again: nothing is written.
+    eng = run_globals(Start([SVC, off, QMM, CANNONS], compiled=want))
+    assert QSAVE + b"compiled.cfg" not in eng.written
+    assert compiled_line(eng) == [b"compiled=3", b"same"]
+    # Another set, or the same mods in another order: written anew.
+    for other in ([SVC.dir, QM], [CANNONS.dir, SVC.dir, QM]):
+        eng = run_globals(Start([SVC, off, QMM, CANNONS], compiled=other))
+        assert eng.written[QSAVE + b"compiled.cfg"] == want
+        assert compiled_line(eng) == [b"compiled=3", b"written"]
+
+
+@pytest.mark.parametrize("why", ["apply", "register7", "restore"])
+def test_no_record_from_an_apply_or_a_multiplayer_sync(why):
+    s = Start([SVC, QMM, CANNONS], register7=b"x" if why == "register7" else b"",
+              restore_file=(why == "restore"))
+    files, ages = files_of(s)
+    eng = Engine(files, ages, mods=[(m.dir, m.on, m.tag) for m in s.mods])
+    eng.register7 = s.register7
+    M5.load(eng, "qmGlobals")
+    if why == "apply":
+        eng.set("qm_rt", runmode=b"apply")
+    M5.run(eng, "qmGlobals")
+    assert QSAVE + b"compiled.cfg" not in eng.written
+    assert compiled_line(eng) == [b"compiled=3", b"-"]
+
+
+def test_the_owners_32_mods_in_modman_are_caught_at_the_next_start():
+    """2026-10-02: a start with the Unofficial Patch and Quartermaster booted;
+    then State vs Country and four more known mods with its libraries were
+    switched on in modman. The boot's record makes the guard judge them: one
+    of each script stays, the rest are switched off and the game restarts.
+    Patrol stays: the one other mod with a dmscript.global, Rise of America,
+    is switched off before it claims anything."""
+    up = Mod(b"mods\\UnofficialPatch", title=b"Cossacks 3 Unofficial Patch")
+    svcpp = Mod(W + b"2476747618", title=b"State vs Country++", libs=[b"unit.script", b"ai.script"],
+                tag=b"2476747618")
+    roa = Mod(W + b"1812752526", title=b"Rise of America", libs=[b"classes.script"], glob=True,
+              tag=b"1812752526")
+    before = [up, Mod(SVC.dir, on=False, title=SVC.title, libs=SVC.libs, tag=SVC.tag),
+              Mod(svcpp.dir, on=False, title=svcpp.title, libs=svcpp.libs, tag=svcpp.tag),
+              Mod(roa.dir, on=False, title=roa.title, libs=roa.libs, glob=True, tag=roa.tag),
+              Mod(CANNONS.dir, on=False, title=CANNONS.title, libs=CANNONS.libs, tag=CANNONS.tag),
+              Mod(PATROL.dir, on=False, title=PATROL.title, glob=True, tag=PATROL.tag), QMM]
+    every = known(*before)
+    record = run_globals(Start(before, known=every)).written[QSAVE + b"compiled.cfg"]
+    assert G.compiled_dirs(flat_keys(record)) == [up.dir, QM]
+    after = [up, SVC, svcpp, roa, CANNONS, PATROL, QMM]
+    # 0.1.2 (no record): clean, and the game would stop at "Error compiling scripts".
+    assert check(Start(after, known=every))[1].why == b"clean"
+    eng, plan = check(Start(after, known=every, compiled=record))
+    assert plan.why == b"conflict" and plan.basis == b"compiled"
+    assert [(after[i].title, f) for i, f, _j in plan.off] == [
+        (b"State vs Country++", b"lib\\unit.script"), (b"Rise of America", b"lib\\classes.script"),
+        (b"Cannons Attack Automatically", b"lib\\unit.script")]
+    assert b"[qm-guard] off " + svcpp.dir + b" (lib\\unit.script, shipped by " + SVC.dir + b")" \
+        in eng.log
 
 
 def test_the_boot_reads_the_guards_note_once_and_disarms_its_loop_test():
