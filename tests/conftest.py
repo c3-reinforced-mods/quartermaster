@@ -53,7 +53,18 @@ def pytest_sessionfinish(session, exitstatus):
         json.dump(rows, fh)
 
 
+#: The tests that take tens of seconds each (interpreted boots, the merge
+#: cases, the builds): run first, so a parallel run starts them at once on as
+#: many workers instead of finishing on one of them while the others idle.
+#: With --dist worksteal that took the full run from 4:10 to 2:40 on 32
+#: workers (2026-10-02); with --dist load the order changed nothing.
+HEAVY = ("test_m4_pascal.py", "test_m3_pascal.py::test_the_emitted_merge_dumps",
+         "test_hbuild.py", "test_m6_screens.py", "test_m4_build.py", "test_m5_build.py",
+         "test_m5_pascal.py", "test_ref_textio.py", "test_ref_selftest.py")
+
+
 def pytest_collection_modifyitems(config, items):
+    items.sort(key=lambda item: not any(h in item.nodeid for h in HEAVY))
     if config.getoption("--runslow") or os.environ.get("QM_SLOW") == "1":
         return
     skip = pytest.mark.skip(reason="slow: run with --runslow")

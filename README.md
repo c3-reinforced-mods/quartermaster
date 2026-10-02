@@ -63,8 +63,11 @@ upload of 2026-10-02 sent `data\quartermaster\state\manifest.cfg` that way).
 ```
 python -m pytest                 # fast tests
 python -m pytest --runslow       # every test
-python -m pytest --runslow -n auto   # every test on every core (pip install pytest-xdist)
+python -m pytest --runslow -n auto --dist worksteal   # every test on every core
 ```
+
+The parallel run needs `pip install pytest-xdist`. With two threads per core, about one and
+a half workers per physical core is fastest (`-n 24` on 16 cores: the full run in about 70 s).
 
 Coverage (`pip install pytest-cov`): `--cov=ref --cov=tools --cov-branch` for the Python
 side; for the game-side code set `QM_PASCOV` to a folder, run the tests, then

@@ -432,7 +432,7 @@ class State(object):
             lines, marks = [], {}
             self.items = Parser(lex(text, lines), lines, marks).program()
             ran = COVERAGE.setdefault(text, (set(marks.values()), set()))[1]
-        comp = Compiler(marks, ran)
+        comp = Compiler(marks, ran, set(it[1] for it in self.items if it[0] == "routine"))
         self.routines = {}
         for it in self.items:
             if it[0] == "routine":
@@ -549,8 +549,10 @@ class Compiler(object):
     never an error here: a state is compiled whole, and a test that does not
     reach the construct must not be skipped for it."""
 
-    def __init__(self, marks, ran):
+    def __init__(self, marks, ran, routines=()):
         self.marks, self.ran = marks, ran
+        # The state's own routines: a call to any other name is a native's.
+        self.routine_names = set(routines)
 
     # ------------------------------------------------------------ routines
     def routine(self, it):
@@ -642,7 +644,7 @@ class Compiler(object):
                 name, site = t[1], self.site(t[2])
             else:
                 return _raiser(Unsupported, "call of %r" % (t,))
-            return lambda f: f.invoke(name, site)
+            return self.call(name, site)
         if k == "if":
             cond, yes = self.expr(s[1]), self.stmt(s[2])
             no = self.stmt(s[3]) if s[3] is not None else None
@@ -719,7 +721,7 @@ class Compiler(object):
                 c = l[name] if l is not None and name in l else f.g.get(name)
                 if c is None:
                     raise RunError("%s is not declared" % name)
-                c.v = float(v) if isinstance(c.v, float) and isinstance(v, int) else v
+                c.v = float(v) if type(c.v) is float and isinstance(v, int) else v
             return store
         if target[0] == "index":
             element = self.element(target)
@@ -730,6 +732,25 @@ class Compiler(object):
                 arr.data[j] = v
             return store_element
         return _raiser(RunError, "cannot assign to %r" % (target,))
+
+    def call(self, name, site):
+        """A call of `name`: the state's routine, or else the engine's native,
+        decided here once (Frame.invoke asks the same on every call)."""
+        if name in self.routine_names:
+            def call_routine(f):
+                return f.state.routines[name](f, name, site)
+            return call_routine
+        vals = site.vals
+
+        def call_native(f):
+            fn = f.natives.get(name)
+            if fn is None:
+                raise Unsupported("native %s" % name)
+            byref = BYREF_NATIVES.get(name)
+            if byref:
+                return fn(*[site.refs[k](f) if k in byref else v(f) for k, v in enumerate(vals)])
+            return fn(*[v(f) for v in vals])
+        return call_native
 
     # --------------------------------------------------------- expressions
     def site(self, args):
@@ -813,7 +834,7 @@ class Compiler(object):
             return index
         if k == "fcall":
             name, site = e[1], self.site(e[2])
-            return lambda f: f.invoke(name, site)
+            return self.call(name, site)
         if k == "rel":
             return self.relation(e[1], self.expr(e[2]), self.expr(e[3]))
         if k == "bin":
@@ -840,6 +861,9 @@ class Compiler(object):
 
         def rel(f):
             a, b = left(f), right(f)
+            t = type(a)
+            if t is type(b) and (t is int or t is bytes):
+                return compare(a, b)
             if isinstance(a, bytes) != isinstance(b, bytes):
                 raise RunError("a String compared with a number")
             if isinstance(a, ORDERED) and isinstance(b, ORDERED):
@@ -889,6 +913,20 @@ class Compiler(object):
                     return r - 0x100000000 if r & 0x80000000 else r
                 return _arith("*", a, b)
             return mul
+
+        if op in ("div", "mod"):
+            is_div = op == "div"
+
+            def div_mod(f):
+                a, b = left(f), right(f)
+                if type(a) is int and type(b) is int and b != 0:
+                    q = abs(a) // abs(b)
+                    if (a >= 0) != (b >= 0):
+                        q = -q
+                    r = (q if is_div else a - b * q) & MASK
+                    return r - 0x100000000 if r & 0x80000000 else r
+                return _arith(op, a, b)
+            return div_mod
 
         def other(f):
             a = left(f)

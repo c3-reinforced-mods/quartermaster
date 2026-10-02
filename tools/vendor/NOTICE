@@ -11,8 +11,16 @@ does not have that mod installed; `tools/hbuild.py` imports only this copy.
 Modified: four comment/docstring phrases that cited the source project's own
 rule numbers were reworded or dropped (module docstring lines 3 and 47-48, the
 docstring of `natives()` line 157, the docstring of `balance()` line 587). No
-code line was changed. Vendored copy sha256
-6ee224635a043c0508c79d7791f4cfbac38a85392638ea1a74b76cc6d3298403, 39154 bytes.
+code line was changed then (vendored copy sha256
+6ee224635a043c0508c79d7791f4cfbac38a85392638ea1a74b76cc6d3298403, 39154 bytes).
+
+Modified 2026-10-02: `_NAME_LINE` matches spaces and tabs within the line
+instead of `\s`, which crosses line ends: on a section padded with empty lines
+(the build lints each state at its own line numbers) the old pattern rescanned
+the run of empty lines from every line start, 14 of a build's 19 seconds. Both
+give the same name on all 379 wrapped inputs of a build and on every vanilla
+.inc / .aix. Vendored copy now sha256
+3acba68eefee71ef5e642fccb536c659efd4c455d2a2cabaa376e2afc01fe4f0, 39446 bytes.
 
 Other references inside the file (`verify.py`, `tools/checks/gscript_check.py`,
 `swfp.bytes_ops`, "conventions B8") point into the source project and are kept

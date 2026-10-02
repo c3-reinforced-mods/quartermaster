@@ -416,7 +416,11 @@ _FIELD = re.compile(rb"^[ \t]*([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*:\s*"
 # `for [MAIN]i := ... downto 0 do` ... `break(MAIN);` - the language's loop
 # labels. Only the `for [` form declares one; `list[i]` must not.
 _LABEL = re.compile(rb"\bfor\s*\[([A-Za-z_]\w*)\]")
-_NAME_LINE = re.compile(rb"^\s*Name\s*=\s*(\S+)\s*$", re.M)
+# Spaces and tabs within the line only: `\s` crosses line ends, and on a
+# section padded with empty lines (hbuild lints each state at its own line
+# numbers) every line start rescanned the whole run of them - 14 of a
+# build's 19 seconds. A Name line itself never spans lines.
+_NAME_LINE = re.compile(rb"^[ \t]*Name[ \t]*=[ \t]*(\S+)[ \t\r]*$", re.M)
 
 
 def class_spans(code):
