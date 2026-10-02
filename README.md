@@ -7,7 +7,7 @@ mod's change is gone, or the game stops at "Error compiling scripts". Quartermas
 fixes that inside the game. It is a tool, not a gameplay mod: on its own it changes
 nothing in battles, units or balance, and it needs no other mod.
 
-Version 0.1.0 (beta). Players get it from the game's Steam Workshop.
+Version 0.1.1 (beta). Players get it from the game's Steam Workshop.
 
 ## What it does
 

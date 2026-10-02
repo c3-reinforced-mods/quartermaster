@@ -242,7 +242,7 @@ the game's version text `ver`, `MainMenu.col1.row1.wnewgame.ver`
 Patch keep it at that path), and changes no text the menu made. `qmTick`
 looks `ver` up on every main-menu frame while the manager's screens are
 ready, and when its frame has no `qmver` (the menu made the frame again) runs
-`EventQmManager` with `verline` = 1. That puts "Quartermaster 0.1.0" in the
+`EventQmManager` with `verline` = 1. That puts "Quartermaster 0.1.1" in the
 window's head colour `FFDFAF` one line above the stack of texts the menu
 keeps there: `ver`, then each visible text of the frame whose y lies less
 than two heights above the stack's top (New Terrain Mod's own version, a line
