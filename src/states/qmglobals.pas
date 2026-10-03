@@ -26,11 +26,14 @@ requires:
 //! <save>\quartermaster\compiled.cfg, d<k> every enabled mod's dir in the
 //! engine's order (Quartermaster too) and n (ref/guard.py compiled_values).
 //! Quartermaster running means the libraries compiled, so this is the set the
-//! guard trusts at the next start; a mod switched on outside Quartermaster
-//! since then is judged like a new subscription (revised 2026-10-02, 0.1.3).
-//! Not on an Apply (that set has not compiled yet), not in a multiplayer sync
-//! (that set is the host's, the player's own comes back after it - the
-//! guard's own test), and written only when it differs.
+//! guard falls back to after a start that stopped at "Error compiling
+//! scripts" (0.1.3); and the guard's compile.cfg of this start is set to
+//! pending = 0. Not on an Apply (that set has not compiled yet), not in a
+//! multiplayer sync (that set is the host's, the player's own comes back
+//! after it - the guard's own test); compiled.cfg is written only when it
+//! differs. Under the same condition the set the last Apply chose
+//! (<save>\quartermaster\chosen.cfg, written by qmOrder) is saved back with
+//! only n = 0: the guard trusts it for the start after that Apply alone.
 //!
 //! Keys of qm_glob (docs/ui.md):
 //!   n                    registered mods (at most 256)
@@ -43,6 +46,10 @@ requires:
 //!   gdmoved gdlate gdlatef  1 when the guard moved Quartermaster last at this
 //!                        start, the first mod after it and its hook file
 //!   gdd<k> gdt<k> gdf<k> gdo<k>  dir, title, file, title of the other mod
+//!                        (file and other mod empty: switched off by a step
+//!                        after a failed start without a clash)
+//!   gdwhy                the note's rule: conflict, failed-names,
+//!                        failed-revert, failed-vanilla, order ('' before 0.1.3)
 var qmGbG : Integer = ParserSelectByKey('qm_glob');
 if (qmGbG=0) then
 qmGbG := ParserCreate('qm_glob');
@@ -137,6 +144,9 @@ begin
    // before the menu (qmTick sets `shown` when the notice is on the screen).
    if (qmGbGn>0) and (ParserGetValueByKeyByHandle(qmGbNt, 'shown')<>'1') then
    qmGbFresh := 1;
+   // The rule (ref/guard.py note_values `why`): conflict, or a step after a
+   // start that stopped - failed-names, failed-revert, failed-vanilla.
+   ParserSetValueByKeyByHandle(qmGbG, 'gdwhy', ParserGetValueByKeyByHandle(qmGbNt, 'why'));
    // The guard moved Quartermaster last (a later mod shipped a hook file): one
    // report line on the start after it; there is no notice to show for it.
    if (ParserGetValueByKeyByHandle(qmGbNt, 'moved')='1') and (ParserGetValueByKeyByHandle(qmGbNt, 'restarted')='1') then
@@ -174,6 +184,7 @@ ParserSetIntValueByKeyByHandle(qmGbG, 'gdnew', qmGbFresh);
 
 //! The record of this start's mods for the guard (see the head of this file).
 var qmGbCw : String = '-';
+var qmGbPw : String = '-';
 if (not qmGbApply) and (StringRegister7='') and (FileAge(GetAppSaveDirectoryPath+'mods.restore')=-1) then
 begin
    var qmGbCp : String = GetAppSaveDirectoryPath+'quartermaster\compiled.cfg';
@@ -203,5 +214,43 @@ begin
       else
       qmGbCw := 'not-saved';
    end;
+   //! This start booted, so the guard's record of it is no longer pending: the
+   //! next start's guard reads pending = 1 as a start that stopped at "Error
+   //! compiling scripts" (with that start's CompileFramework line).
+   var qmGbPp : String = GetAppSaveDirectoryPath+'quartermaster\compile.cfg';
+   var qmGbPr : Integer = ParserSelectByKey('qm_glob_pending');
+   if (qmGbPr=0) then
+   qmGbPr := ParserCreate('qm_glob_pending');
+   ParserClearByHandle(qmGbPr);
+   if (FileAge(qmGbPp)<>-1) then
+   if (ParserLoadFromFileByHandle(qmGbPr, qmGbPp)) then
+   if (ParserGetValueByKeyByHandle(qmGbPr, 'pending')='1') then
+   begin
+      ParserSetValueByKeyByHandle(qmGbPr, 'pending', '0');
+      if (ParserSaveToFileByHandle(qmGbPr, qmGbPp)) then
+      qmGbPw := 'cleared'
+      else
+      qmGbPw := 'not-saved';
+   end;
+   //! The set an Apply chose in the window (chosen.cfg, qmOrder) is trusted by
+   //! the guard for one start, and that start is this one: it booted, so the
+   //! set is in compiled.cfg now, and from here on chosen.cfg says nothing
+   //! (saved back with only n = 0, not deleted).
+   var qmGbXp : String = GetAppSaveDirectoryPath+'quartermaster\chosen.cfg';
+   var qmGbXr : Integer = ParserSelectByKey('qm_glob_chosen');
+   if (qmGbXr=0) then
+   qmGbXr := ParserCreate('qm_glob_chosen');
+   ParserClearByHandle(qmGbXr);
+   if (FileAge(qmGbXp)<>-1) then
+   if (ParserLoadFromFileByHandle(qmGbXr, qmGbXp)) then
+   if (ParserGetIntValueByKeyByHandle(qmGbXr, 'n')>0) then
+   begin
+      ParserClearByHandle(qmGbXr);
+      ParserSetValueByKeyByHandle(qmGbXr, 'n', '0');
+      if (ParserSaveToFileByHandle(qmGbXr, qmGbXp)) then
+      qmLog('globals chosen=cleared')
+      else
+      qmLog('globals chosen=not-saved');
+   end;
 end;
-qmLog('globals mods='+IntToStr(qmGbN)+' with global scripts='+IntToStr(qmGbWith)+' clashes='+IntToStr(qmGbCn)+' guard note='+IntToStr(qmGbGn)+' fresh='+IntToStr(qmGbFresh)+' compiled='+IntToStr(qmGbCk)+' '+qmGbCw);
+qmLog('globals mods='+IntToStr(qmGbN)+' with global scripts='+IntToStr(qmGbWith)+' clashes='+IntToStr(qmGbCn)+' guard note='+IntToStr(qmGbGn)+' fresh='+IntToStr(qmGbFresh)+' compiled='+IntToStr(qmGbCk)+' '+qmGbCw+' pending='+qmGbPw);

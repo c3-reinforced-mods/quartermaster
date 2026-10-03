@@ -50,6 +50,7 @@ class El(object):
         self.text, self.tag, self.w, self.h = text, tag, w, h
         self.children, self.items = [], []
         self.visible, self.enabled, self.sel, self.top, self.color = True, True, None, 0, None
+        self.x = self.y = 0
 
 
 class Screen(PAS5.Engine):
@@ -197,6 +198,7 @@ class Screen(PAS5.Engine):
                           color, update):
         h_ = self._add("text", name, parent, text=text, w=w, h=h)
         self.els[h_].color = color
+        self.els[h_].x, self.els[h_].y = x, y
         return h_
 
     def n__gui_CreateInputBox(self, name, parent, text, *rest):
@@ -441,9 +443,13 @@ def test_down_without_quartermaster_may_reach_the_last_row():
 
 @pytest.mark.parametrize("extra, text, hexcode", [
     (dict(msg=b"Done."), b"Done.", None),
+    # A clash only asks since 0.1.3 (orange; red and a refused Apply before).
     (dict(pcn=2, pc0=b"A and B both ship lib\\unit.script"),
-     b"Clash: A and B both ship lib\\unit.script - the game may not start with both. "
-     b"Deactivate one of them. (1 more)", b"FF0000"),
+     b"May clash: A and B both ship lib\\unit.script. If the game does not start with both, "
+     b"Quartermaster switches back. (1 more)", b"FFA500"),
+    # An about.cfg FAIL, which stops the Apply, comes before a clash.
+    (dict(pcn=1, pc0=b"A and B both ship lib\\unit.script", pan=1, pa0=b"C rules out D",
+          pat0=b"FAIL"), b"C rules out D.", b"FF0000"),
     (dict(pan=2, pa0=b"A needs B", pat0=b"WARN", pa1=b"C rules out D", pat1=b"FAIL"),
      b"C rules out D. (1 more)", b"FF0000"),
     (dict(pan=1, pa0=b"A loads after B", pat0=b"WARN"), b"A loads after B.", b"FFA500"),
@@ -600,13 +606,74 @@ def test_the_guard_notice_lists_the_mods_it_switched_off():
     eng = show(model(ROWS, mode=3, gdln=2, gdl0=b"Cannons (lib\\unit.script, State vs Country)",
                      gdl1=b"Other (dmscript.global, Patrol)"))
     texts = dict((t.name, t.text) for t in eng.under(win(eng, b"gnotice.gwnd").handle, "text"))
-    # Not "new mods" since 0.1.3: a mod switched on in modman is judged too.
+    # Not "new mods" since 0.1.3: a mod switched on in modman is judged too,
+    # and only against mods it has not started with.
     assert texts[b"gtext"] == b"Quartermaster switched off clashing mods"
-    assert b"switched these mods off" in texts[b"gwhy"] and b"new" not in texts[b"gwhy"]
+    assert texts[b"gwhy"] == (
+        b"Each of them replaces a core script that another active mod replaces too, and they"
+        b" have not started together before. With both, the game may stop at \"Error compiling"
+        b" scripts\", so Quartermaster switched these mods off and restarted the game:")
     assert texts[b"glist"] == b"Cannons (lib\\unit.script, State vs Country)" + BR + \
         b"Other (dmscript.global, Patrol)"
+    # A set the player applies in the window is trusted for one start
+    # (chosen.cfg), so the way to run such a pair anyway is to activate it.
+    assert texts[b"gnote"] == (
+        b"If they do work together, activate them here: Quartermaster lets them start once and"
+        b" switches back if the game does not start.")
     assert buttons(eng, b"gnotice")[b"bok"] == (b"OK", True)
     assert win(eng, b"gnotice").visible
+
+
+def _wrapped(self, font, text, width):
+    """GetGUIWrappedTextByFont over the emulated font: a break wherever a
+    line would run past `width`, at a space."""
+    lines, line = [], b""
+    for word in text.split(b" "):
+        if line and CHAR_W * len(line + b" " + word) > width:
+            lines.append(line)
+            line = word
+        else:
+            line = word if not line else line + b" " + word
+    return BR.join(lines + [line])
+
+
+@pytest.mark.parametrize("why, n", [(b"conflict", 1), (b"conflict", 4), (b"failed-names", 2)])
+def test_the_guard_notice_makes_room_for_its_wrapped_texts(monkeypatch, why, n):
+    """The body and the line under the list wrap at the body's width; each
+    text goes under the one before, and the window ends far enough below the
+    last for the OK button to stay clear of it - the conflict's line under
+    the list takes two lines since 0.1.3."""
+    monkeypatch.setattr(Screen, "n_GetGUIWrappedTextByFont", _wrapped)
+    keys = dict(("gdl%d" % k, b"Mod %d - ships scripts\\lib\\unit.script, like Other" % k)
+                for k in range(n))
+    eng = show(model(ROWS, mode=3, gdln=n, gdwhy=why, **keys))
+    wnd = win(eng, b"gnotice.gwnd")
+    texts = dict((t.name, t) for t in eng.under(wnd.handle, "text"))
+    why_, lst, note = texts[b"gwhy"], texts[b"glist"], texts[b"gnote"]
+    for t in (why_, note):
+        lines = t.text.split(BR)
+        assert all(CHAR_W * len(l) <= 720 for l in lines) and t.w == 720
+        assert t.h >= LINE_H * len(lines)
+    if why == b"conflict":
+        assert (why_.text.count(BR), note.text.count(BR)) == (2, 1)
+    assert lst.h >= n * LINE_H
+    assert why_.y + why_.h <= lst.y and lst.y + lst.h <= note.y
+    # Under the last line at least the room the one-line note left above the
+    # OK button until 0.1.3 (centred 76 above the window's bottom edge).
+    assert wnd.h - (note.y + note.h) >= 76 - LINE_H // 2
+
+
+def test_the_guard_notice_after_a_start_that_stopped_says_so():
+    """0.1.3: a step after a start that stopped (qm_ui gdwhy failed-*) switches
+    mods off without a clash; its lines are the titles alone."""
+    eng = show(model(ROWS, mode=3, gdln=1, gdl0=b"Cannons Attack Automatically",
+                     gdwhy=b"failed-revert"))
+    texts = dict((t.name, t.text) for t in eng.under(win(eng, b"gnotice.gwnd").handle, "text"))
+    assert texts[b"gtext"] == b"Quartermaster switched mods off"
+    assert texts[b"gwhy"].startswith(b'The last start did not reach the main menu: it stopped at '
+                                     b'"Error compiling scripts", or the menu did not compile.')
+    assert texts[b"glist"] == b"Cannons Attack Automatically"
+    assert b"one at a time" in texts[b"gnote"]
 
 
 @pytest.mark.parametrize("folder, typ, excl, slot", [

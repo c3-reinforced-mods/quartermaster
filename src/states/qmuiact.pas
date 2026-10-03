@@ -25,10 +25,12 @@ requires:
 //! Global scripts (plan S17): after every command the pending set - the rows
 //! pe<i> = 1 - is checked for two rows that ship the same global script
 //! (gl<i>, qmUiModel): `pcn` clashes, pc<k> one line each, pcl<i> the clash
-//! of a row for its Details line. Apply then opens the dialog with the
-//! clashes (confblk, confb<k>) instead of the question, and confirm refuses:
-//! with both, the game stops at "Error compiling scripts" before Quartermaster
-//! runs, so the Apply that would lead there is not offered.
+//! of a row for its Details line. Apply asks with the clashes as notes: two
+//! mods that ship the same file may still run together, and a start that
+//! stops at "Error compiling scripts" is undone by the start-up guard at the
+//! next start (plan S17, 0.1.3). Until 0.1.3 the dialog listed them instead of
+//! the question (confblk) and confirm refused; confblk is now about.cfg rules
+//! and the activation check only.
 //!
 //! After every command the pending changes are counted again: `chg` rows
 //! whose activation differs from what the game loaded, and `canapply` = 1
@@ -374,10 +376,15 @@ begin
          begin
             qmUaS := IntToStr(qmUaK);
             qmGlobPath(ParserGetValueByKeyByHandle(qmUaGl, 'gdf'+qmUaS), qmUaGp);
-            // The lines of the guard's notice.
+            // The lines of the guard's notice: a clash, or a mod a step after a
+            // failed start switched off (no file; the notice's text says why).
+            if (ParserGetValueByKeyByHandle(qmUaGl, 'gdf'+qmUaS)='') then
+            ParserSetValueByKeyByHandle(qmUaUi, 'gdl'+qmUaS, ParserGetValueByKeyByHandle(qmUaGl, 'gdt'+qmUaS))
+            else
             ParserSetValueByKeyByHandle(qmUaUi, 'gdl'+qmUaS, ParserGetValueByKeyByHandle(qmUaGl, 'gdt'+qmUaS)+' - ships '+qmUaGp+', like '+ParserGetValueByKeyByHandle(qmUaGl, 'gdo'+qmUaS));
             ParserSetIntValueByKeyByHandle(qmUaUi, 'gdln', qmUaK+1);
          end;
+         ParserSetValueByKeyByHandle(qmUaUi, 'gdwhy', ParserGetValueByKeyByHandle(qmUaGl, 'gdwhy'));
          ParserSetIntValueByKeyByHandle(qmUaUi, 'mode', 3);
       end;
    end;
@@ -520,13 +527,11 @@ begin
    else
    begin
       ParserSetIntValueByKeyByHandle(qmUaUi, 'mode', 1);
-      // A pending set with a global-script clash or a broken about.cfg rule:
-      // the dialog lists them and refuses (pc<k> and pa<k> are from the check
-      // after the last command; confbrule says whether rule lines are among
-      // them, for the dialog's note).
-      ParserSetIntValueByKeyByHandle(qmUaUi, 'confblk', ParserGetIntValueByKeyByHandle(qmUaUi, 'pcn'));
-      for qmUaK:=0 to ParserGetIntValueByKeyByHandle(qmUaUi, 'pcn')-1 do
-      ParserSetValueByKeyByHandle(qmUaUi, 'confb'+IntToStr(qmUaK), ParserGetValueByKeyByHandle(qmUaUi, 'pc'+IntToStr(qmUaK)));
+      // A pending set with a broken about.cfg rule: the dialog lists them and
+      // refuses (pa<k> are from the check after the last command; confbrule
+      // says whether rule lines are among them, for the dialog's note). A
+      // global-script clash is a note further down, not a refusal (0.1.3).
+      ParserSetIntValueByKeyByHandle(qmUaUi, 'confblk', 0);
       ParserSetIntValueByKeyByHandle(qmUaUi, 'confbrule', 0);
       for qmUaK:=0 to ParserGetIntValueByKeyByHandle(qmUaUi, 'pan')-1 do
       if (ParserGetValueByKeyByHandle(qmUaUi, 'pat'+IntToStr(qmUaK))='FAIL') and (ParserGetIntValueByKeyByHandle(qmUaUi, 'confblk')<qmUaConfMax) then
@@ -560,6 +565,9 @@ begin
          if (ParserGetIntValueByKeyByHandle(qmUaUi, 'pe'+qmUaS)=0) and (ParserGetIntValueByKeyByHandle(qmUaUi, 'en'+qmUaS)=1) then
          qmUaConf('- '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+qmUaS));
       end;
+      // A global-script clash of the pending set is asked about (pc<k>).
+      for qmUaK:=0 to ParserGetIntValueByKeyByHandle(qmUaUi, 'pcn')-1 do
+      qmUaConf('Note: '+ParserGetValueByKeyByHandle(qmUaUi, 'pc'+IntToStr(qmUaK))+'; if the game does not start with both, Quartermaster switches back at the next start.');
       // An about.cfg WARN of the pending set is asked about, not refused: it
       // goes into the dialog's list (M8 task 4: WARN asks for confirmation).
       // The prefix of a warning line.
@@ -602,11 +610,9 @@ begin
    if (qmUaMode=1) and (ParserGetIntValueByKeyByHandle(qmUaUi, 'confblk')>0) then
    begin
       ParserSetIntValueByKeyByHandle(qmUaUi, 'mode', 0);
-      // The message of a refused Apply.
-      if (ParserGetIntValueByKeyByHandle(qmUaUi, 'confbrule')=1) then
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Not applied: first fix what the list showed.')
-      else
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Not applied: deactivate one mod of each clash first.');
+      // The message of a refused Apply (about.cfg rules and the activation
+      // check only since 0.1.3).
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Not applied: first fix what the list showed.');
       qmLog('ui confirm refused: '+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'confblk'))+' problem(s), rules='+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'confbrule')));
    end
    else
@@ -1246,8 +1252,8 @@ begin
       qmGlobPath(qmUaF, qmUaP);
       // The clash lines.
       ParserSetValueByKeyByHandle(qmUaUi, 'pc'+IntToStr(qmUaPn), ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaA))+' and '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaB))+' both replace '+qmUaP);
-      ParserSetValueByKeyByHandle(qmUaUi, 'pcl'+IntToStr(qmUaA), 'It clashes with '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaB))+': both replace '+qmUaP+'; Apply will not switch them on together.');
-      ParserSetValueByKeyByHandle(qmUaUi, 'pcl'+IntToStr(qmUaB), 'It clashes with '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaA))+': both replace '+qmUaP+'; Apply will not switch them on together.');
+      ParserSetValueByKeyByHandle(qmUaUi, 'pcl'+IntToStr(qmUaA), 'It may clash with '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaB))+': both replace '+qmUaP+'. If the game does not start with both, Quartermaster switches back.');
+      ParserSetValueByKeyByHandle(qmUaUi, 'pcl'+IntToStr(qmUaB), 'It may clash with '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaA))+': both replace '+qmUaP+'. If the game does not start with both, Quartermaster switches back.');
       qmUaPn := qmUaPn+1;
    end;
 end;

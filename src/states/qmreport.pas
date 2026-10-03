@@ -143,7 +143,7 @@ begin
                   if (qmQcB=qmQcA) then
                   qmReWho(IntToStr(qmQcP), qmQcW);
                end;
-               qmReMAdd('  FAIL scripts\'+ParserGetValueByKeyByHandle(qmReBoot, 'gcf'+IntToStr(qmQcK))+': '+qmQcW+' ships it too: only one copy loads, and the game may not start with both');
+               qmReMAdd('  WARN scripts\'+ParserGetValueByKeyByHandle(qmReBoot, 'gcf'+IntToStr(qmQcK))+': '+qmQcW+' ships it too: only the later one''s copy loads');
             end;
          end;
       end;
@@ -813,8 +813,8 @@ begin
       if (ParserGetValueByKeyByHandle(qmReMods, 'tit'+IntToStr(qmReI))='') then
       qmReT := qmReT+' (Quartermaster)';
       qmReClash(qmReI, False, qmReCl);
-      if (qmReCl>0) and (qmReRank('FAIL')>qmReRank(qmReS)) then
-      qmReS := 'FAIL';
+      if (qmReCl>0) and (qmReRank('WARN')>qmReRank(qmReS)) then
+      qmReS := 'WARN';
       qmReMAdd('');
       qmReMAdd(qmReS+' '+qmReT);
       qmReMAdd('  '+ParserGetValueByKeyByHandle(qmReRep, 'why'+IntToStr(qmReRec)));

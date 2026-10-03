@@ -7,9 +7,10 @@ It must decide what ref/guard.py decide() decides from the same start - the
 mods switched off and why, Quartermaster moved last - and do it the way run
 g8 showed works: the engine's own list handed to SteamSyncWorkshopItems with
 those mods off, mods.ini written back as loaded with only those changes, the
-note guard.cfg as note_values() lists it, a restart; and on every start it
-does not restart, the record compile.cfg of the mods this start compiles with
-(the one before it kept as compile.prev.cfg).
+note guard.cfg as note_values() lists it, a restart; and on every start that
+reads the mod list, restarted or not, the record compile.cfg of the mods this
+start compiles with (record_values; the one before it kept as
+compile.prev.cfg).
 """
 import functools
 import random
@@ -85,7 +86,7 @@ class Start(object):
 
     def __init__(self, mods, known=None, register7=b"", restore_file=False, age=AGE,
                  previous=None, compile_prev=None, ini=True, steam=True, game=VANILLA,
-                 compiled=None):
+                 compiled=None, logs=(), chosen=None):
         self.mods, self.known, self.register7 = mods, known, register7
         self.restore_file, self.age, self.previous = restore_file, age, previous
         self.compile_prev, self.ini, self.steam = compile_prev, ini, steam
@@ -94,12 +95,23 @@ class Start(object):
         # compiled.cfg: the dirs of the last start that booted (a list), the
         # file's bytes as they are (bytes), or no file (None).
         self.compiled = compiled
+        # chosen.cfg (the set last applied in the window), the same way.
+        self.chosen = chosen
+        # <save>\log\: (name, bytes, FileAge) of each cos_*.log; the newest is
+        # this start's, the second newest the previous start's.
+        self.logs = list(logs)
 
 
 def compiled_bytes(s):
     if s.compiled is None or isinstance(s.compiled, bytes):
         return s.compiled
     return flat(G.compiled_values(s.compiled))
+
+
+def chosen_bytes(s):
+    if s.chosen is None or isinstance(s.chosen, bytes):
+        return s.chosen
+    return flat(G.compiled_values(s.chosen))
 
 
 def files_of(s):
@@ -129,9 +141,27 @@ def files_of(s):
         files[QSAVE + b"compile.cfg"] = s.compile_prev
     if compiled_bytes(s) is not None:
         files[QSAVE + b"compiled.cfg"] = compiled_bytes(s)
+    if chosen_bytes(s) is not None:
+        files[QSAVE + b"chosen.cfg"] = chosen_bytes(s)
     if s.restore_file:
         files[SAVE + b"mods.restore"] = b"x"
+    for name, data, age in s.logs:
+        files[SAVE + b"log\\" + name] = data
+        ages[SAVE + b"log\\" + name] = age
     return files, ages
+
+
+def previous_log(s):
+    """The log the guard reads: the second newest by FileAge, in the order the
+    engine lists the folder (the emulator: by name), as qmLastStart picks it."""
+    a1 = a2 = -1
+    n1 = n2 = None
+    for name, data, age in sorted(s.logs):
+        if age > a1:
+            a2, n2, a1, n1 = a1, n1, age, (name, data)
+        elif age > a2:
+            a2, n2 = age, (name, data)
+    return n2[1] if n2 is not None else None
 
 
 def run_guard(s):
@@ -153,8 +183,19 @@ def twin(s):
     raw = compiled_bytes(s)
     compiled = G.compiled_dirs(flat_keys(raw)) if raw is not None else None
     plan = G.decide(gm, s.known, mp_sync=s.register7 != b"", restore_file=s.restore_file,
-                    same_game=same, previous=previous, compiled=compiled)
+                    same_game=same, previous=previous, compiled=compiled, failed=failed_of(s, gm),
+                    chosen=chosen_of(s))
     return gm, plan
+
+
+def failed_of(s, gm):
+    return G.failed(flat_keys(s.compile_prev) if s.compile_prev is not None else None,
+                    previous_log(s), gm)
+
+
+def chosen_of(s):
+    raw = chosen_bytes(s)
+    return G.compiled_dirs(flat_keys(raw)) if raw is not None else None
 
 
 def check(s):
@@ -186,7 +227,11 @@ def check(s):
         else:
             assert eng.synced == []
         assert b"sync=%d mods.ini=saved; restarting" % (0 if plan.off and s.steam else -1) in text
-        assert QSAVE + b"compile.cfg" not in eng.written
+        # The life a restart ends still compiles: recorded, without the mods
+        # SteamSyncWorkshopItems took out of it.
+        assert eng.written.get(QSAVE + b"compile.cfg") == flat(
+            G.record_values(gm, plan, took=bool(plan.off and s.steam)))
+        assert eng.written.get(QSAVE + b"compile.prev.cfg") == s.compile_prev
     else:
         assert eng.restarted == [] and eng.synced == [] and INI not in eng.written
         assert note is None
@@ -197,8 +242,14 @@ def check(s):
             on = [m for m in s.mods if m.on]
             assert record == flat([kv for k, m in enumerate(on)
                                    for kv in ((b"d%d" % k, m.dir), (b"t%d" % k, m.title))]
-                                  + [(b"n", b"%d" % len(on))])
+                                  + [(b"n", b"%d" % len(on)), (b"pending", b"1")])
+            assert record == flat(G.record_values(gm, plan, took=False))
             assert eng.written.get(QSAVE + b"compile.prev.cfg") == s.compile_prev
+    # A chosen set is spent by a start that stopped: cleared to n = 0.
+    spent = (G.failed(flat_keys(s.compile_prev) if s.compile_prev is not None else None,
+                      previous_log(s), gm)
+             and why not in (b"mp-sync", b"game-version") and chosen_of(s) is not None)
+    assert eng.written.get(QSAVE + b"chosen.cfg") == (flat([(b"n", b"0")]) if spent else None)
     return eng, plan
 
 
@@ -218,6 +269,36 @@ LATE = Mod(W + b"2476747618", title=b"State vs Country++", hooks=[b"gui\\menu.in
 
 def known(*mods):
     return [(m.dir, False) for m in mods]
+
+
+#: The start that stopped: its compile.cfg (written by the guard before it
+#: compiled, never cleared by a boot) and its log with the CompileFramework
+#: line (as the owner's start of 2026-10-02 23:43 logged it).
+PENDING = flat([(b"d0", SVC.dir), (b"t0", SVC.title), (b"n", b"1"), (b"pending", b"1")])
+ERRLOG = (b"LOG|  4 |[qm-guard] clean mods=46\r\n"
+          b"ERROR|163 |CompileFramework() - compile global script error: Syntax error: Line: "
+          b"39902, Column: 32: Unknown Name\r\n"
+          b"ERROR|164 |Compile script error: OnClear\r\n")
+#: The logs: the previous start's (older) and this start's (the newest).
+LOGS = [(b"cos_261002_234336.log", ERRLOG, AGE - 120), (b"cos_261002_234441.log", b"", AGE)]
+LOGS_OK = [(b"cos_261002_234336.log", b"LOG|  4 |[qm-guard] clean mods=46\r\n", AGE - 120),
+           (b"cos_261002_234441.log", b"", AGE)]
+#: A start whose main menu did not compile (a broken docreate.inc): nothing ran.
+LOGS_MENU = [(b"cos_261002_234336.log", b"LOG|  4 |[qm-guard] clean mods=46\r\n"
+              b"ERROR|  7 |Compile script error: DoCreate\r\n", AGE - 120),
+             (b"cos_261002_234441.log", b"", AGE)]
+
+
+def pend(*mods, **kw):
+    """compile.cfg of a start that stopped with `mods` enabled (the guard
+    writes the enabled ones): pending = 1, or `pending=None` for a record of
+    0.1.2, which had no such key."""
+    on = [m for m in mods if m.on]
+    vals = [kv for k, m in enumerate(on) for kv in ((b"d%d" % k, m.dir), (b"t%d" % k, m.title))]
+    vals.append((b"n", b"%d" % len(on)))
+    if kw.get("pending", b"1") is not None:
+        vals.append((b"pending", kw.get("pending", b"1")))
+    return flat(vals)
 
 
 def test_a_new_cannons_next_to_state_vs_country_is_switched_off():
@@ -262,21 +343,73 @@ def test_both_at_once_and_a_new_mod_of_its_own_kept():
     (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS),
            compile_prev=flat([(b"n", b"1"), (b"d0", b"mods\\Before"), (b"t0", b"Before")])),
      b"clean"),
-    # compiled.cfg (0.1.3): Cannons is known, but it was off in the last start
-    # that booted - switched on in modman since - so it is judged...
+    # 0.1.3: Cannons switched on in modman next to State vs Country is judged
+    # in advance against the last start that booted, and switched off...
     (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM]),
      b"restart"),
-    # ...and a set that booted is trusted as it is, clash or not.
-    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), compiled=[SVC.dir, QM, CANNONS.dir]),
-     b"clean"),
-    (Start([SVC, QMM, CANNONS], compiled=[SVC.dir, QM]), b"restart"),
-    # A record that is not one (no count, a count of 0): known.cfg decides.
+    # ...unless the pair booted together, or the player applied it in the
+    # window since (chosen.cfg; one with no count is none).
     (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS),
-           compiled=flat([(b"n", b"0"), (b"d0", SVC.dir)])), b"clean"),
-    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=flat([(b"d0", SVC.dir)])),
-     b"clean"),
-    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), compiled=[SVC.dir, QM], register7=b"x"),
-     b"mp-sync"),
+           compiled=[SVC.dir, QM, CANNONS.dir]), b"clean"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM],
+           chosen=[SVC.dir, QM, CANNONS.dir]), b"clean"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM],
+           chosen=flat([(b"n", b"0")])), b"restart"),
+    # A start that stopped: its record is pending with the mods enabled now and
+    # its log has the error. The names step switches Cannons off.
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM],
+           compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS), b"restart"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS),
+           compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS), b"restart"),
+    # The pair the player chose stopped the start: not trusted, and spent.
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM],
+           chosen=[SVC.dir, QM, CANNONS.dir], compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS),
+     b"restart"),
+    # A record of 0.1.2 (no pending key) counts as pending; a main menu that
+    # did not compile is a start that stopped too.
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM, CANNONS.dir],
+           compile_prev=pend(SVC, QMM, CANNONS, pending=None), logs=LOGS), b"restart"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM, CANNONS.dir],
+           compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS_MENU), b"restart"),
+    # The word is found where it starts over inside itself ('...DoC' + 'ompile').
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM, CANNONS.dir],
+           compile_prev=pend(SVC, QMM, CANNONS),
+           logs=[(b"cos_1.log", b"Compile script error: DoCompile script error: DoCreate", AGE - 9),
+                 (b"cos_2.log", b"", AGE)]), b"restart"),
+    # Not a failed start: the boot cleared the record, or the log has no
+    # error (the player closed the game while it loaded), or no previous log,
+    # or another set is enabled now (the player switched Cannons off in
+    # modman, as the engine's dialog says) - the record names the old one.
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM, CANNONS.dir],
+           compile_prev=pend(SVC, QMM, CANNONS, pending=b"0"), logs=LOGS), b"clean"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM, CANNONS.dir],
+           compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS_OK), b"clean"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM, CANNONS.dir],
+           compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS[1:]), b"clean"),
+    (Start([SVC, QMM, Mod(CANNONS.dir, on=False, title=CANNONS.title, libs=CANNONS.libs,
+                          tag=CANNONS.tag)],
+           known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM],
+           compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS), b"clean"),
+    (Start([SVC, QMM, CANNONS, PATROL], known=known(SVC, QMM, CANNONS, PATROL),
+           compiled=[SVC.dir, QM, CANNONS.dir, PATROL.dir],
+           compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS), b"clean"),
+    # The order does not count: the same set with Quartermaster moved last.
+    (Start([SVC, CANNONS, QMM], known=known(SVC, QMM, CANNONS), compiled=[SVC.dir, QM, CANNONS.dir],
+           compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS), b"restart"),
+    # The revert step (nothing clashes by name), the vanilla step (the good
+    # set itself stopped), and nothing left to switch off.
+    (Start([SVC, QMM, PATROL], known=known(SVC, QMM, PATROL), compiled=[SVC.dir, QM],
+           compile_prev=pend(SVC, QMM, PATROL), logs=LOGS), b"restart"),
+    (Start([SVC, QMM, PATROL], known=known(SVC, QMM, PATROL), compiled=[SVC.dir, QM, PATROL.dir],
+           compile_prev=pend(SVC, QMM, PATROL), logs=LOGS), b"restart"),
+    (Start([QMM], known=known(QMM), compiled=[QM], compile_prev=pend(QMM), logs=LOGS),
+     b"failed-alone"),
+    # A record that is not one (no count of at least 1): the good set is the
+    # game alone.
+    (Start([SVC, QMM], known=known(SVC, QMM), compiled=flat([(b"n", b"0"), (b"d0", SVC.dir)]),
+           compile_prev=pend(SVC, QMM), logs=LOGS), b"restart"),
+    (Start([SVC, QMM, CANNONS], known=known(SVC, QMM), compiled=[SVC.dir, QM], register7=b"x",
+           compile_prev=pend(SVC, QMM, CANNONS), logs=LOGS), b"mp-sync"),
 ])
 def test_each_rule_decides_as_the_twin(start, why):
     eng, _plan = check(start)
@@ -353,13 +486,29 @@ def test_random_starts_agree_with_the_twin():
         if rng.random() < 0.5:
             compiled = [m.dir.upper() if rng.random() < 0.2 else m.dir
                         for m in mods if rng.random() < 0.6] + [QM]
+        # chosen.cfg now and then: some of them, applied in the window
+        chosen = None
+        if rng.random() < 0.3:
+            chosen = [m.dir for m in mods if rng.random() < 0.5] + [QM]
+        # half of them after a start that stopped (pending record of the mods
+        # enabled now, error log), some with a record that does not count
+        # (cleared, of another set, or a clean log), some of 0.1.2 (no key)
+        stopped = rng.random()
+        prev = pend(*mods) if stopped < 0.6 else None
+        if stopped < 0.1:
+            prev = pend(*mods, pending=b"0")
+        elif stopped < 0.2:
+            prev = PENDING
+        elif stopped < 0.3:
+            prev = pend(*mods, pending=None)
+        logs = LOGS_OK if stopped < 0.15 else (LOGS_MENU if rng.random() < 0.2 else LOGS)
         start = Start(mods, known=known(*known_mods) if rng.random() < 0.85 else None,
-                      compiled=compiled)
+                      compiled=compiled, compile_prev=prev, logs=logs, chosen=chosen)
         _eng, plan = check(start)
         if plan.action == b"off" and rng.random() < 0.5:
             # The same start again after its restart: a loop.
-            again = Start(mods, known=start.known, compiled=compiled,
-                          previous=[(b"restarted", b"1"), (b"key", plan.key)])
+            again = Start(mods, known=start.known, compiled=compiled, compile_prev=prev, logs=logs,
+                          chosen=chosen, previous=[(b"restarted", b"1"), (b"key", plan.key)])
             _eng, plan2 = check(again)
             assert plan2.why == b"loop"
 
@@ -402,13 +551,15 @@ def test_the_boots_clashes_are_the_twins_pairs():
         assert [(int(key(b"ca%d" % k)), int(key(b"cb%d" % k)), key(b"cf%d" % k))
                 for k in range(len(pairs))] == pairs
         assert b"[qm] globals mods=%d with global scripts=%d clashes=%d guard note=0 fresh=0 " \
-            b"compiled=%d written" % (
+            b"compiled=%d written pending=-" % (
                 len(mods), sum(1 for m in mods if not m.core and (m.libs or m.glob or m.src)),
                 len(pairs), sum(1 for m in mods if m.on)) in eng.log
 
 
 def compiled_line(eng):
-    return [l for l in eng.log if l.startswith(b"[qm] globals mods=")][-1].rsplit(b" ", 2)[1:]
+    """The end of qmGlobals' line: compiled=<n>, what became of compiled.cfg,
+    pending=<what became of compile.cfg's pending>."""
+    return [l for l in eng.log if l.startswith(b"[qm] globals mods=")][-1].rsplit(b" ", 3)[1:]
 
 
 def test_the_boot_records_the_mods_it_compiled_with():
@@ -419,16 +570,32 @@ def test_the_boot_records_the_mods_it_compiled_with():
     eng = run_globals(s)
     want = flat(G.compiled_values([SVC.dir, QM, CANNONS.dir]))
     assert eng.written[QSAVE + b"compiled.cfg"] == want
-    assert compiled_line(eng) == [b"compiled=3", b"written"]
+    assert compiled_line(eng) == [b"compiled=3", b"written", b"pending=-"]
     # The same set again: nothing is written.
     eng = run_globals(Start([SVC, off, QMM, CANNONS], compiled=want))
     assert QSAVE + b"compiled.cfg" not in eng.written
-    assert compiled_line(eng) == [b"compiled=3", b"same"]
+    assert compiled_line(eng) == [b"compiled=3", b"same", b"pending=-"]
     # Another set, or the same mods in another order: written anew.
     for other in ([SVC.dir, QM], [CANNONS.dir, SVC.dir, QM]):
         eng = run_globals(Start([SVC, off, QMM, CANNONS], compiled=other))
         assert eng.written[QSAVE + b"compiled.cfg"] == want
-        assert compiled_line(eng) == [b"compiled=3", b"written"]
+        assert compiled_line(eng) == [b"compiled=3", b"written", b"pending=-"]
+
+
+def test_the_boot_clears_the_guards_pending_record():
+    """A start that gets as far as Quartermaster compiled: the guard's
+    compile.cfg of it is no longer pending, so the next start is ordinary."""
+    eng = run_globals(Start([SVC, QMM], compile_prev=PENDING))
+    assert eng.written[QSAVE + b"compile.cfg"] == PENDING.replace(b"pending = 1", b"pending = 0")
+    assert compiled_line(eng)[2] == b"pending=cleared"
+    # Cleared already, or a record before 0.1.3 (no pending): left as it is.
+    for prev in (PENDING.replace(b"pending = 1", b"pending = 0"),
+                 flat([(b"d0", SVC.dir), (b"t0", SVC.title), (b"n", b"1")])):
+        eng = run_globals(Start([SVC, QMM], compile_prev=prev))
+        assert QSAVE + b"compile.cfg" not in eng.written and compiled_line(eng)[2] == b"pending=-"
+    # An Apply clears nothing.
+    eng = run_globals(Start([SVC, QMM], compile_prev=PENDING), apply=True)
+    assert QSAVE + b"compile.cfg" not in eng.written
 
 
 @pytest.mark.parametrize("why", ["apply", "register7", "restore"])
@@ -443,16 +610,19 @@ def test_no_record_from_an_apply_or_a_multiplayer_sync(why):
         eng.set("qm_rt", runmode=b"apply")
     M5.run(eng, "qmGlobals")
     assert QSAVE + b"compiled.cfg" not in eng.written
-    assert compiled_line(eng) == [b"compiled=3", b"-"]
+    assert compiled_line(eng) == [b"compiled=3", b"-", b"pending=-"]
 
 
-def test_the_owners_32_mods_in_modman_are_caught_at_the_next_start():
+def test_the_owners_32_mods_in_modman_are_switched_off_before_the_start():
     """2026-10-02: a start with the Unofficial Patch and Quartermaster booted;
     then State vs Country and four more known mods with its libraries were
-    switched on in modman. The boot's record makes the guard judge them: one
-    of each script stays, the rest are switched off and the game restarts.
-    Patrol stays: the one other mod with a dmscript.global, Rise of America,
-    is switched off before it claims anything."""
+    switched on in modman. Judged against that start before the libraries
+    compile, all but one of each script are switched off by name, and the
+    game restarts without the engine's "Error compiling scripts". Patrol
+    stays: the one other mod with a dmscript.global, Rise of America, is
+    switched off before it claims anything. Coming from 0.1.2 there is no
+    record of a start that booted: that start stops, and the next one - the
+    record 0.1.2 left has no pending key - switches the same mods off."""
     up = Mod(b"mods\\UnofficialPatch", title=b"Cossacks 3 Unofficial Patch")
     svcpp = Mod(W + b"2476747618", title=b"State vs Country++", libs=[b"unit.script", b"ai.script"],
                 tag=b"2476747618")
@@ -467,15 +637,50 @@ def test_the_owners_32_mods_in_modman_are_caught_at_the_next_start():
     record = run_globals(Start(before, known=every)).written[QSAVE + b"compiled.cfg"]
     assert G.compiled_dirs(flat_keys(record)) == [up.dir, QM]
     after = [up, SVC, svcpp, roa, CANNONS, PATROL, QMM]
-    # 0.1.2 (no record): clean, and the game would stop at "Error compiling scripts".
-    assert check(Start(after, known=every))[1].why == b"clean"
+    expected = [(b"State vs Country++", b"lib\\unit.script"),
+                (b"Rise of America", b"lib\\classes.script"),
+                (b"Cannons Attack Automatically", b"lib\\unit.script")]
     eng, plan = check(Start(after, known=every, compiled=record))
     assert plan.why == b"conflict" and plan.basis == b"compiled"
-    assert [(after[i].title, f) for i, f, _j in plan.off] == [
-        (b"State vs Country++", b"lib\\unit.script"), (b"Rise of America", b"lib\\classes.script"),
-        (b"Cannons Attack Automatically", b"lib\\unit.script")]
+    assert [(after[i].title, f) for i, f, _j in plan.off] == expected
     assert b"[qm-guard] off " + svcpp.dir + b" (lib\\unit.script, shipped by " + SVC.dir + b")" \
         in eng.log
+    # From 0.1.2: no compiled.cfg, so known mods are not judged and the start
+    # stops; the start after it reads 0.1.2's record, which has no pending key.
+    eng, plan = check(Start(after, known=every))
+    assert plan.why == b"clean"
+    eng, plan = check(Start(after, known=every, compile_prev=pend(*after, pending=None), logs=LOGS))
+    assert plan.why == b"failed-names" and plan.basis == b"none"
+    assert [(after[i].title, f) for i, f, _j in plan.off] == expected
+
+
+def test_quartermaster_put_in_the_middle_of_clashing_mods_is_put_right_one_start_later():
+    """2026-10-03 08:45: the owner switched mods on in modman and put
+    Quartermaster in the middle, a mod after it shipping the DoProgress hook.
+    The guard restarts only to move itself last, and that life still compiles
+    the clashing set and stops at "Error compiling scripts". It is recorded
+    as pending, so the very next start is the one after a failed start and
+    switches off by name; unrecorded, it ran into the error a second time."""
+    every = known(SVC, CANNONS, QMM, LATE)
+    eng, plan = check(Start([SVC, QMM, CANNONS, LATE], known=every))
+    assert plan.why == b"order" and plan.moved and not plan.off
+    record = flat_keys(eng.written[QSAVE + b"compile.cfg"])
+    assert record[b"pending"] == b"1"
+    assert G.compiled_dirs(record) == [SVC.dir, QM, CANNONS.dir, LATE.dir]
+    after = [SVC, CANNONS, LATE, QMM]
+    eng, plan = check(Start(after, known=every, compile_prev=eng.written[QSAVE + b"compile.cfg"],
+                            logs=LOGS))
+    assert plan.why == b"failed-names" and plan.basis == b"none"
+    assert [after[i].title for i, _f, _j in plan.off] == [CANNONS.title]
+
+
+def test_a_restart_records_the_set_its_life_compiles():
+    """The mods SteamSyncWorkshopItems takes out of the running start are not
+    compiled by it; without Steam they are, and the record says so."""
+    for steam, dirs in ((True, [SVC.dir, QM]), (False, [SVC.dir, QM, CANNONS.dir])):
+        eng, plan = check(Start([SVC, QMM, CANNONS], known=known(SVC, QMM), steam=steam))
+        assert plan.why == b"conflict"
+        assert G.compiled_dirs(flat_keys(eng.written[QSAVE + b"compile.cfg"])) == dirs
 
 
 def test_the_boot_reads_the_guards_note_once_and_disarms_its_loop_test():

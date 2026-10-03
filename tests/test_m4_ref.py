@@ -385,9 +385,10 @@ def test_a_hook_file_whose_merge_gave_up_is_ok_alone_and_warn_with_others():
 
 
 def test_a_boot_clash_marks_both_mods_in_the_report_by_mod(fixture_dir, entries):
-    """Each mod of a clash gets FAIL in its head and a line naming the file
-    and the other mod (the dirs matched without case); without the clash
-    neither block has it."""
+    """Each mod of a clash gets WARN in its head (FAIL until 0.1.3: the boot
+    that lists it compiled with both) and a line naming the file and the
+    other mod (the dirs matched without case); without the clash neither
+    block has it."""
     inp, g = _run(C.RUN_A, fixture_dir, entries)
     dirs, enabled, me = inp.dir_of(), inp.enabled(), inp.self_pos
     a, b = sorted(enabled)[:2]
@@ -397,10 +398,11 @@ def test_a_boot_clash_marks_both_mods_in_the_report_by_mod(fixture_dir, entries)
     for pos, other in ((a, b), (b, a)):
         head = next(k for k, line in enumerate(m)
                     if line.split(b" ", 1)[-1] == RP._row(pos, dirs, me))
-        assert m[head].startswith(b"FAIL ")
-        assert m[head + 2] == (b"  FAIL scripts\\lib\\unit.script: " + RP._who(other, dirs)
-                               + b" ships it too: only one copy loads, and the game may not "
-                               b"start with both")
+        assert m[head].split(b" ", 1)[0] in (b"WARN", b"FAIL")
+        assert m[head].split(b" ", 1)[0] == RP.worst(
+            [RP.mod_status(r, pos) for r in RP._files_of(g, pos)] + [V.WARN])
+        assert m[head + 2] == (b"  WARN scripts\\lib\\unit.script: " + RP._who(other, dirs)
+                               + b" ships it too: only the later one's copy loads")
     m0 = RP.mod_lines(g, RP.report_lines(g, dirs, enabled, me, plain), dirs, enabled, me, plain)
     assert not [line for line in m0 if b"ships it too" in line]
     assert len(m) == len(m0) + 2

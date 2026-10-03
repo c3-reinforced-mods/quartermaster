@@ -759,9 +759,10 @@ def test_the_boots_own_report_keeps_its_boot_block_and_reads_back(game_dir, stat
 
 def test_a_clash_shows_in_the_blocks_of_both_mods(game_dir, states):
     """The boot's clash (qm_boot gc<k>) goes into the mod's own block of the
-    report by mod: FAIL in its head and a line naming the file and the other
-    mod, word for word the twin's (ref/report.py _clash_lines); the other mod
-    here has no position, so it is named by its dir. Run look-wsZ showed both
+    report by mod: WARN in its head (a FAIL until 0.1.3: the boot that lists
+    a clash compiled with both) and a line naming the file and the other mod,
+    word for word the twin's (ref/report.py _clash_lines); the other mod here
+    has no position, so it is named by its dir. Run look-wsZ showed both
     clashing mods as OK there while the window said FAIL."""
     eng, gen = run_real(game_dir, states)
     eng.states["qmreport"].run()
@@ -778,11 +779,12 @@ def test_a_clash_shows_in_the_blocks_of_both_mods(game_dir, states):
     head = next(k for k, line in enumerate(mlines) if line.endswith(b"mods\\Quartermaster "
                                                                      b"(Quartermaster)"))
     want_line = RP._clash_lines(0, RP.Dirs({0: qm}), RP.Boot(BOOT_LINES, V.FAIL, [], clashes))
-    assert want_line == [b"  FAIL scripts\\lib\\unit.script: mods\\Gone ships it too: only one "
-                         b"copy loads, and the game may not start with both"]
-    want = (mlines[:head] + [b"FAIL " + mlines[head].split(b" ", 1)[1], mlines[head + 1]]
+    assert want_line == [b"  WARN scripts\\lib\\unit.script: mods\\Gone ships it too: only the "
+                         b"later one's copy loads"]
+    tag = RP.worst([mlines[head].split(b" ", 1)[0], V.WARN])
+    want = (mlines[:head] + [tag + b" " + mlines[head].split(b" ", 1)[1], mlines[head + 1]]
             + want_line + mlines[head + 2:])
     assert [got[b"m%d" % k] for k in range(int(got[b"mlines"]))] == want
-    # The window's status keys stay as they were: its model marks a clash FAIL
+    # The window's status keys stay as they were: its model marks a clash WARN
     # from qm_glob itself (qmUiModel, stsrc globals).
     assert (got[b"st0"], got[b"why0"]) == (before[b"st0"], before[b"why0"])

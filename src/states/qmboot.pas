@@ -249,7 +249,17 @@ begin
       for qmBtK:=0 to ParserGetIntValueByKeyByHandle(qmBtGl, 'gdn')-1 do
       begin
          qmBtGs := IntToStr(qmBtK);
-         qmBtLine('WARN', 'Switched off at the start, before the scripts compiled: the mod '+ParserGetValueByKeyByHandle(qmBtGl, 'gdt'+qmBtGs)+'. It ships scripts\'+ParserGetValueByKeyByHandle(qmBtGl, 'gdf'+qmBtGs)+', and so does '+ParserGetValueByKeyByHandle(qmBtGl, 'gdo'+qmBtGs)+'; with both the game stops at "Error compiling scripts".');
+         // A step after a failed start switches a mod off without a clash (no
+         // file), or by name (failed-names). Such a start stopped at "Error
+         // compiling scripts" or with a main menu that did not compile, so the
+         // lines say only that it did not reach the main menu.
+         if (ParserGetValueByKeyByHandle(qmBtGl, 'gdf'+qmBtGs)='') then
+         qmBtLine('WARN', 'Switched off at the start, before the scripts compiled: the mod '+ParserGetValueByKeyByHandle(qmBtGl, 'gdt'+qmBtGs)+'. The start before did not reach the main menu, so Quartermaster went back towards mods that started.')
+         else
+         if (SubStr(ParserGetValueByKeyByHandle(qmBtGl, 'gdwhy'), 1, 7)='failed-') then
+         qmBtLine('WARN', 'Switched off at the start, before the scripts compiled: the mod '+ParserGetValueByKeyByHandle(qmBtGl, 'gdt'+qmBtGs)+'. It ships scripts\'+ParserGetValueByKeyByHandle(qmBtGl, 'gdf'+qmBtGs)+', and so does '+ParserGetValueByKeyByHandle(qmBtGl, 'gdo'+qmBtGs)+', and the start before, with both, did not reach the main menu.')
+         else
+         qmBtLine('WARN', 'Switched off at the start, before the scripts compiled: the mod '+ParserGetValueByKeyByHandle(qmBtGl, 'gdt'+qmBtGs)+'. It ships scripts\'+ParserGetValueByKeyByHandle(qmBtGl, 'gdf'+qmBtGs)+', and so does '+ParserGetValueByKeyByHandle(qmBtGl, 'gdo'+qmBtGs)+'; they had not started together, and with both the game may stop at "Error compiling scripts". If they work together, activate it again in Quartermaster''s window.');
       end;
       ParserSetIntValueByKeyByHandle(qmBtRt, 'gdshow', 1);
       ParserSetIntValueByKeyByHandle(qmBtRt, 'tick', 1);
@@ -259,7 +269,8 @@ begin
    for qmBtK:=0 to ParserGetIntValueByKeyByHandle(qmBtGl, 'cn')-1 do
    begin
       qmBtGs := IntToStr(qmBtK);
-      qmBtLine('FAIL', ParserGetValueByKeyByHandle(qmBtGl, 'tit'+IntToStr(ParserGetIntValueByKeyByHandle(qmBtGl, 'ca'+qmBtGs)))+' and '+ParserGetValueByKeyByHandle(qmBtGl, 'tit'+IntToStr(ParserGetIntValueByKeyByHandle(qmBtGl, 'cb'+qmBtGs)))+' both ship scripts\'+ParserGetValueByKeyByHandle(qmBtGl, 'cf'+qmBtGs)+': only one copy loads, and the game may not start with both. Switch one of them off.');
+      // A WARN since 0.1.3: this start compiled with both (a booted clash).
+      qmBtLine('WARN', ParserGetValueByKeyByHandle(qmBtGl, 'tit'+IntToStr(ParserGetIntValueByKeyByHandle(qmBtGl, 'ca'+qmBtGs)))+' and '+ParserGetValueByKeyByHandle(qmBtGl, 'tit'+IntToStr(ParserGetIntValueByKeyByHandle(qmBtGl, 'cb'+qmBtGs)))+' both ship scripts\'+ParserGetValueByKeyByHandle(qmBtGl, 'cf'+qmBtGs)+': only the later one''s copy loads. The game started with both; if one of them misbehaves, switch the other one off.');
       ParserSetValueByKeyByHandle(qmBtBoot, 'gca'+qmBtGs, ParserGetValueByKeyByHandle(qmBtGl, 'dir'+IntToStr(ParserGetIntValueByKeyByHandle(qmBtGl, 'ca'+qmBtGs))));
       ParserSetValueByKeyByHandle(qmBtBoot, 'gcb'+qmBtGs, ParserGetValueByKeyByHandle(qmBtGl, 'dir'+IntToStr(ParserGetIntValueByKeyByHandle(qmBtGl, 'cb'+qmBtGs))));
       ParserSetValueByKeyByHandle(qmBtBoot, 'gcf'+qmBtGs, ParserGetValueByKeyByHandle(qmBtGl, 'cf'+qmBtGs));

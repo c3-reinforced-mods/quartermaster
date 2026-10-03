@@ -390,21 +390,24 @@ def globals_window(cannons_on):
     return eng
 
 
-def test_rows_list_their_global_scripts_and_enabled_clashes_read_fail():
+def test_rows_list_their_global_scripts_and_enabled_clashes_read_warn():
+    # A WARN since 0.1.3 (a FAIL before): the game loaded both.
     eng = globals_window(True)
     cmd(eng, "open")
     assert ui(eng, "gl0") == b"|lib\\ai.script|lib\\unit.script|"
     assert ui(eng, "gl1") == b"|lib\\unit.script|" and ui(eng, "gl2") == b"|"
-    assert (ui(eng, "st0"), ui(eng, "stsrc0")) == (b"FAIL", b"globals")
+    assert (ui(eng, "st0"), ui(eng, "stsrc0")) == (b"WARN", b"globals")
     assert b"scripts\\lib\\unit.script" in ui(eng, "why1")
     # The status sentence has no full stop of its own; it gets one before the
     # clash sentence (run look-wsX read "Deactivate one of them It clashes").
     cmd(eng, "select", arg=0)
-    assert b"Deactivate one of them. It clashes with " in ui(eng, "d0")
+    assert b"deactivate the other. It may clash with " in ui(eng, "d0")
     assert b".." not in ui(eng, "d0")
 
 
-def test_apply_refuses_a_pending_set_with_a_clash():
+def test_apply_asks_about_a_pending_set_with_a_clash():
+    # Until 0.1.3 the dialog listed the clash instead of the question and
+    # confirm refused; the start-up guard now undoes a start that stops.
     eng = globals_window(False)
     cmd(eng, "open")
     assert ui(eng, "pcn") == b"0" and ui(eng, "st1") == b"-"
@@ -412,12 +415,13 @@ def test_apply_refuses_a_pending_set_with_a_clash():
     cmd(eng, "activate")
     assert ui(eng, "pcn") == b"1"
     assert b"both replace scripts\\lib\\unit.script" in ui(eng, "pc0")
-    assert b"Apply activates it. It clashes with" in ui(eng, "d0")
+    assert b"Apply activates it. It may clash with" in ui(eng, "d0")
     cmd(eng, "apply")
-    assert ui(eng, "mode") == b"1" and ui(eng, "confblk") == b"1"
-    cmd(eng, "confirm")
-    assert ui(eng, "mode") == b"0" and eng.key(b"qm_rt", b"uiapply") == b"0"
-    assert b"Not applied" in ui(eng, "msg")
+    assert ui(eng, "mode") == b"1" and ui(eng, "confblk") == b"0"
+    lines = [ui(eng, "conf%d" % k) for k in range(int(ui(eng, "confn")))]
+    assert any(l.startswith(b"Note: ") and b"both replace scripts\\lib\\unit.script" in l
+               and b"Quartermaster switches back at the next start" in l for l in lines)
+    cmd(eng, "cancel")
     # Deactivating it again clears the clash, and Apply has nothing to do.
     cmd(eng, "deactivate")
     assert ui(eng, "pcn") == b"0" and ui(eng, "canapply") == b"0"
@@ -433,6 +437,20 @@ def test_the_guard_notice_opens_once_and_ok_closes_it():
     assert ui(eng, "gdl0") == (b"Cannons Attack Automatically - ships scripts\\lib\\unit.script,"
                                b" like State vs Country")
     assert ui(eng, "gdoff1") == b"1" and b"switched off at start" in ui(eng, "why1")
+    # The pair had not started together; activated here, it is trusted for a
+    # start (the Apply's chosen.cfg), so the row says how to run it anyway.
+    assert ui(eng, "why1").endswith(b"; with both the game may not start. If they work"
+                                    b" together, activate it again")
+    # A step after a start that stopped: by name, or with no clash.
+    for why, f, end in ((b"failed-names", b"lib\\unit.script",
+                         b", and the start before, with both, did not reach the main menu"),
+                        (b"failed-revert", b"", b": the start before did not reach the main menu")):
+        step = globals_window(False)
+        step.set("qm_glob", gdn=1, gdd0=CANNONS, gdt0=b"Cannons Attack Automatically", gdf0=f,
+                 gdo0=b"State vs Country" if f else b"", gdwhy=why)
+        step.set("qm_ui", gdopen=1)
+        cmd(step, "open")
+        assert ui(step, "why1").endswith(end), ui(step, "why1")
     cmd(eng, "activate")                      # ignored under the notice
     assert ui(eng, "mode") == b"3"
     # `open` under the notice draws it again (qmTick after a rebuilt menu, or

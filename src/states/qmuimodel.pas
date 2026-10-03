@@ -161,9 +161,10 @@ ParserSetValueByKeyByHandle(qmUmUi, 'org'+IntToStr(qmUmSelf), 'Quartermaster');
 //! Global scripts (plan S17): each row's list (gl<i>, qmGlobFiles; `|` for
 //! Quartermaster and its copies), the rows the start-up guard switched off
 //! at this start (qm_glob gd*, matched by dir: gdoff<i> = 1, their why<i>
-//! says so), and FAIL for every enabled row that ships a global script
-//! another enabled row ships too (stsrc<i> = globals). qmUiAct checks the
-//! pending set against the same lists before an Apply.
+//! says so), and WARN for every enabled row that reads OK and ships a global
+//! script another enabled row ships too (stsrc<i> = globals; a FAIL until
+//! 0.1.3 - the game loaded that set). qmUiAct checks the pending set against
+//! the same lists before an Apply and asks, not refuses.
 var qmUmGl : array [0..255] of String;
 var qmUmGlob : Integer = ParserSelectByKey('qm_glob');
 var qmUmF : String;
@@ -185,8 +186,15 @@ if SameText(ParserGetValueByKeyByHandle(qmUmGlob, 'gdd'+IntToStr(qmUmK)), qmUmDi
 begin
    ParserSetIntValueByKeyByHandle(qmUmUi, 'gdoff'+IntToStr(qmUmI), 1);
    qmGlobPath(ParserGetValueByKeyByHandle(qmUmGlob, 'gdf'+IntToStr(qmUmK)), qmUmPath);
-   // Why a row is off after the start-up guard.
-   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'switched off at start by Quartermaster: it replaces '+qmUmPath+', and so does '+ParserGetValueByKeyByHandle(qmUmGlob, 'gdo'+IntToStr(qmUmK))+'; with both the game would not start');
+   // Why a row is off after the start-up guard: a clash, or a step after a
+   // start that stopped (no file).
+   if (ParserGetValueByKeyByHandle(qmUmGlob, 'gdf'+IntToStr(qmUmK))='') then
+   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'switched off at start by Quartermaster: the start before did not reach the main menu')
+   else
+   if (SubStr(ParserGetValueByKeyByHandle(qmUmGlob, 'gdwhy'), 1, 7)='failed-') then
+   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'switched off at start by Quartermaster: it replaces '+qmUmPath+', and so does '+ParserGetValueByKeyByHandle(qmUmGlob, 'gdo'+IntToStr(qmUmK))+', and the start before, with both, did not reach the main menu')
+   else
+   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'switched off at start by Quartermaster: it replaces '+qmUmPath+', and so does '+ParserGetValueByKeyByHandle(qmUmGlob, 'gdo'+IntToStr(qmUmK))+'; with both the game may not start. If they work together, activate it again');
 end;
 for qmUmI:=0 to qmUmN-1 do
 if (ParserGetIntValueByKeyByHandle(qmUmUi, 'en'+IntToStr(qmUmI))=1) and (StrLength(qmUmGl[qmUmI])>1) then
@@ -194,13 +202,16 @@ for qmUmJ:=0 to qmUmN-1 do
 if (qmUmJ<>qmUmI) and (ParserGetIntValueByKeyByHandle(qmUmUi, 'en'+IntToStr(qmUmJ))=1) and (StrLength(qmUmGl[qmUmJ])>1) then
 begin
    qmGlobFirst(qmUmGl[qmUmI], qmUmGl[qmUmJ], qmUmF);
-   if (qmUmF<>'') and (ParserGetValueByKeyByHandle(qmUmUi, 'stsrc'+IntToStr(qmUmI))<>'globals') then
+   // A WARN since 0.1.3, and only on a row that reads OK, NEW or ? (no
+   // report yet): the game loaded both, and a failed start is the guard's to
+   // undo (plan S17); a WARN or FAIL of the row's own files stays.
+   if (qmUmF<>'') and (ParserGetValueByKeyByHandle(qmUmUi, 'stsrc'+IntToStr(qmUmI))<>'globals') and ((ParserGetValueByKeyByHandle(qmUmUi, 'st'+IntToStr(qmUmI))='OK') or (ParserGetValueByKeyByHandle(qmUmUi, 'st'+IntToStr(qmUmI))='NEW') or (ParserGetValueByKeyByHandle(qmUmUi, 'st'+IntToStr(qmUmI))='?')) then
    begin
       qmGlobPath(qmUmF, qmUmPath);
-      ParserSetValueByKeyByHandle(qmUmUi, 'st'+IntToStr(qmUmI), 'FAIL');
+      ParserSetValueByKeyByHandle(qmUmUi, 'st'+IntToStr(qmUmI), 'WARN');
       ParserSetValueByKeyByHandle(qmUmUi, 'stsrc'+IntToStr(qmUmI), 'globals');
       // Why a row clashes.
-      ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'replaces '+qmUmPath+', and so does '+ParserGetValueByKeyByHandle(qmUmUi, 'name'+IntToStr(qmUmJ))+': only one copy can load, and the game may not start with both. Deactivate one of them');
+      ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'replaces '+qmUmPath+', and so does '+ParserGetValueByKeyByHandle(qmUmUi, 'name'+IntToStr(qmUmJ))+': only the later one''s copy loads. The game started with both; if one of them misbehaves, deactivate the other');
       qmUmClash := qmUmClash+1;
    end;
 end;
@@ -324,7 +335,8 @@ end;
 //! under, and the status: a loaded row that breaks a rule of the loaded set
 //! (qmAbRules over en<i> in the loaded order) or whose file has a FAIL value
 //! is FAIL (stsrc<i> = about, why<i> the problem); an OK row with a WARN is
-//! WARN. A global-script clash (stsrc globals) keeps its own FAIL.
+//! WARN. A global-script clash (stsrc globals) is a WARN, which a FAIL of
+//! about.cfg replaces (until 0.1.3 the clash was a FAIL that kept its place).
 var qmUmAb : Integer = ParserSelectByKey('qm_about');
 var qmUmAbOk : Integer = 0;
 var qmUmAs : String;
@@ -362,7 +374,8 @@ begin
       if (qmUmAt='') then
       qmField(ParserGetValueByKeyByHandle(qmUmAb, 'nm'+qmUmAs), '|', 1, qmUmAt);
       ParserSetValueByKeyByHandle(qmUmUi, 'abid'+qmUmAs, qmUmAt);
-      if (ParserGetIntValueByKeyByHandle(qmUmUi, 'en'+qmUmAs)=1) and (ParserGetValueByKeyByHandle(qmUmUi, 'stsrc'+qmUmAs)<>'globals') then
+      // A clash row is a WARN since 0.1.3, so an about.cfg FAIL goes over it.
+      if (ParserGetIntValueByKeyByHandle(qmUmUi, 'en'+qmUmAs)=1) then
       begin
          qmUmAt := '';
          qmUmAx := '';

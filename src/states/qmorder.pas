@@ -45,6 +45,9 @@ requires: inchead
 //! eon<i> keeps the flags the running game loaded: qmModsIni compares its
 //! enabled order with the new one.
 //!
+//! An Apply also records the set it put into mods.ini for the start-up guard,
+//! <save>\quartermaster\chosen.cfg (at the end of this state).
+//!
 //! mods.ini and order.cfg are left alone during an MP mod sync (plan S8: the
 //! engine's restore branch owns the mod list then, data/scripts/
 //! resource.script:44-74 - a mod missing for the sync must not drop out of
@@ -405,3 +408,37 @@ begin
 end
 else
 StateMachineExecuteState(GetTriggerManagerStateMachineHandle('qm_core'), 'qmModsIni', 0);
+//! The set an Apply put into mods.ini, for the start-up guard (plan S17,
+//! 0.1.3): <save>\quartermaster\chosen.cfg, d<k> every mod the applied rows
+//! enable (Quartermaster too) as they spell the dir, in the new load order,
+//! then n - compiled.cfg's format (ref/guard.py compiled_values). Two mods
+//! that ship the same core script and never started together are switched
+//! off before the compile, unless the player chose them together here: the
+//! guard trusts this set at the next start, and undoes it if that start
+//! stops. Written only when mods.ini holds exactly these rows (qmModsIni
+//! written or same); the boot after it (qmGlobals) sets n = 0 again.
+if (qmOrApply) then
+begin
+   var qmOrAct : String = ParserGetValueByKeyByHandle(qmOrIni, 'action');
+   if (qmOrAct='written') or (qmOrAct='same') then
+   begin
+      var qmOrCh : Integer = ParserSelectByKey('qm_order_chosen');
+      if (qmOrCh=0) then
+      qmOrCh := ParserCreate('qm_order_chosen');
+      ParserClearByHandle(qmOrCh);
+      qmOrJ := 0;
+      for qmOrK:=0 to qmOrN-1 do
+      if (ParserGetValueByKeyByHandle(qmOrIn, 'dis'+IntToStr(qmOrK))='False') then
+      begin
+         ParserSetValueByKeyByHandle(qmOrCh, 'd'+IntToStr(qmOrJ), ParserGetValueByKeyByHandle(qmOrIn, 'dir'+IntToStr(qmOrK)));
+         qmOrJ := qmOrJ+1;
+      end;
+      ParserSetValueByKeyByHandle(qmOrCh, 'n', IntToStr(qmOrJ));
+      if (ParserSaveToFileByHandle(qmOrCh, GetAppSaveDirectoryPath+'quartermaster\chosen.cfg')) then
+      qmLog('ui apply chosen=written n='+IntToStr(qmOrJ))
+      else
+      qmLog('ui apply chosen=not-saved n='+IntToStr(qmOrJ));
+   end
+   else
+   qmLog('ui apply chosen=- mods.ini='+qmOrAct);
+end;

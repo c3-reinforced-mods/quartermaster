@@ -92,11 +92,11 @@ stays by file):
     and the boot's block as above, then per enabled mod in load order:
     <empty>
     <TAG> <mod>[ (Quartermaster)]                  TAG: the worst of its files
-                                                   and FAIL with a clash
+                                                   and WARN with a clash
       <why>                                        mod_why
-      FAIL scripts\<file>: <mod> ships it too: only one copy loads, and the
-        game may not start with both               per clash of the boot's
-                                                   (_clash_lines)
+      WARN scripts\<file>: <mod> ships it too: only  per clash of the boot's
+        the later one's copy loads                 (_clash_lines; FAIL
+                                                   until 0.1.3)
       <TAG> <path>: <how>                          per file it ships (mod_how)
         conflict: <range>: this mod's change lost to <mod>
         conflict: <range>: this mod's change kept over <mod>
@@ -489,8 +489,8 @@ def _clash_lines(pos, dirs, boot):
         else:
             continue
         at = next((p for p in sorted(dirs) if ascii_lower(dirs[p]) == ascii_lower(other)), None)
-        out.append(b"  FAIL scripts\\" + path + b": " + (other if at is None else _who(at, dirs))
-                   + b" ships it too: only one copy loads, and the game may not start with both")
+        out.append(b"  WARN scripts\\" + path + b": " + (other if at is None else _who(at, dirs))
+                   + b" ships it too: only the later one's copy loads")
     return out
 
 
@@ -513,7 +513,8 @@ def mod_lines(g, lines, dirs, enabled, self_pos, boot=None, window=None):
     for pos in sorted(enabled):
         files = _files_of(g, pos)
         clash = _clash_lines(pos, dirs, boot)
-        tag = worst([mod_status(r, pos) for r in files] + [FAIL] * bool(clash))
+        # A WARN since 0.1.3: the boot that lists a clash compiled with both.
+        tag = worst([mod_status(r, pos) for r in files] + [WARN] * bool(clash))
         out += [b"", tag + b" " + _row(pos, dirs, self_pos),
                 b"  " + mod_why(files, pos)] + clash
         for r in files:

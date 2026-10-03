@@ -704,16 +704,9 @@ var qmSmPc : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'pcn');
 // %color()% code, so the line can wrap without a guess at whether a code
 // carries over a line break.
 var qmSmMsgHex : String = '';
-// The clash line and the pending-changes line.
-if (qmSmText='') and (qmSmPc>0) then
-begin
-   qmSmMsgHex := gc_font_hex_color_red;
-   qmSmText := 'Clash: '+ParserGetValueByKeyByHandle(qmSmUi, 'pc0')+' - the game may not start with both. Deactivate one of them.';
-   if (qmSmPc>1) then
-   qmSmText := qmSmText+' ('+IntToStr(qmSmPc-1)+' more)';
-end;
 // The about.cfg rules of the pending set (qmUiAct pan, pa<k>, pat<k>): the
-// first FAIL in red, else the first WARN in orange.
+// first FAIL in red, else the first WARN in orange. They come before a clash:
+// a FAIL stops the Apply, a clash only asks (0.1.3).
 var qmSmPa : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'pan');
 var qmSmPk : Integer;
 if (qmSmText='') and (qmSmPa>0) and (qmSmPanel<>2) then
@@ -732,6 +725,17 @@ begin
    if (qmSmPa>1) then
    qmSmText := qmSmText+' ('+IntToStr(qmSmPa-1)+' more)';
 end;
+// The clash line, orange: two mods that ship the same file may still run
+// together, and the start-up guard undoes a start that stops (red, and a
+// refused Apply, until 0.1.3).
+if (qmSmText='') and (qmSmPc>0) then
+begin
+   qmSmMsgHex := gc_font_hex_color_orange;
+   qmSmText := 'May clash: '+ParserGetValueByKeyByHandle(qmSmUi, 'pc0')+'. If the game does not start with both, Quartermaster switches back.';
+   if (qmSmPc>1) then
+   qmSmText := qmSmText+' ('+IntToStr(qmSmPc-1)+' more)';
+end;
+// The pending-changes line.
 if (qmSmText='') and (qmSmCan=1) and (qmSmPanel<>2) then
 qmSmText := 'Pending changes: '+IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'chg'))+' mod(s), load order '+IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'ordchg'))+'. Apply writes them and restarts the game.';
 // The line wraps to the window's width, and _gui_CreateText takes its height
@@ -877,15 +881,41 @@ begin
    var qmSmGn : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'gdln');
    var qmSmGMask : Integer = _gui_CreateImageActive('gmask', qmSmGNote, gc_gui_material_black, gc_halParentLeft, gc_valParentTop, 0, 0, qmSmVw, qmSmVh, qmTagMask, qmSmEventstate, '', qmSmBupdate);
    SetGUIElementUserBlend(qmSmGMask, 0.5);
-   var qmSmGWnd : Integer = _gui_CreateSkinWindow('gwnd', qmSmGNote, gc_halParentMiddle, gc_valParentMiddle, 0, 0, 820, 250+qmSmGn*qmSmLh, 1, qmSmBupdate);
-   // The guard's notice. Since 0.1.3 the mods it switches off are not only new
-   // subscriptions but any mod switched on since the last start that worked
-   // (modman), so the text no longer calls them new.
+   // The guard's notice: mods it switched off before the compile because each
+   // ships a core script another active mod ships and the two had not started
+   // together (conflict), or a step after a start that stopped (qm_ui gdwhy
+   // failed-*, 0.1.3). A mod switched off after a failed start need not be
+   // new, so neither text calls it so.
+   var qmSmGFail : Boolean = (SubStr(ParserGetValueByKeyByHandle(qmSmUi, 'gdwhy'), 1, 7)='failed-');
+   qmSmText := 'Each of them replaces a core script that another active mod replaces too, and they have not started together before. With both, the game may stop at "Error compiling scripts", so Quartermaster switched these mods off and restarted the game:';
+   if (qmSmGFail) then
+   qmSmText := 'The last start did not reach the main menu: it stopped at "Error compiling scripts", or the menu did not compile. To get the game running again, Quartermaster switched these mods off and restarted it:';
+   var qmSmGWhy : String = GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmText, 720);
+   // The line under the list: a clashing pair still runs when the player
+   // activates it in this window (the Apply's chosen.cfg, qmOrder: the guard
+   // trusts that set for one start and switches back if it stops).
+   qmSmText := 'If they do work together, activate them here: Quartermaster lets them start once and switches back if the game does not start.';
+   if (qmSmGFail) then
+   qmSmText := 'Activate them again here one at a time to find the one that stops the start.';
+   var qmSmGEnd : String = GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmText, 720);
+   // Both texts wrap at the body's width and are measured as the message line
+   // is; the list goes under the first, the second under the list, and the
+   // window takes their height, so the OK button stays clear of a line under
+   // the list that wraps (until 0.1.3 the body had three lines' room and that
+   // line was one line hung above the button).
+   var qmSmGTw : Integer;
+   var qmSmGWh : Integer;
+   var qmSmGEh : Integer;
+   GetGUIElementFontTextFormatRect(gUIConst.font[gc_font_serif_13], qmSmGWhy, qmSmGTw, qmSmGWh);
+   GetGUIElementFontTextFormatRect(gUIConst.font[gc_font_serif_13], qmSmGEnd, qmSmGTw, qmSmGEh);
+   var qmSmGListY : Integer = 62+qmSmGWh+12;
+   var qmSmGEndY : Integer = qmSmGListY+qmSmGn*qmSmLh+4+16;
+   var qmSmGWnd : Integer = _gui_CreateSkinWindow('gwnd', qmSmGNote, gc_halParentMiddle, gc_valParentMiddle, 0, 0, 820, qmSmGEndY+qmSmGEh+4+70, 1, qmSmBupdate);
    qmSmText := 'Quartermaster switched off clashing mods';
+   if (qmSmGFail) then
+   qmSmText := 'Quartermaster switched mods off';
    _gui_CreateText('gtext', qmSmGWnd, qmSmText, gc_halParentMiddle, gc_valParentTop, 0, 34, 0, 0, gc_halMiddle, gc_valMiddle, gc_font_serif_16, qmSmHeadColor, qmSmBupdate);
-   qmSmText := 'Each of them replaces a core script that an active mod replaces too. With both, the game would stop at "Error compiling scripts", so Quartermaster switched these mods off and restarted the game:';
-   qmSmText := GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmText, 720);
-   _gui_CreateText('gwhy', qmSmGWnd, qmSmText, gc_halParentLeft, gc_valParentTop, 50, 62, 720, 3*qmSmLh+4, gc_halLeft, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
+   _gui_CreateText('gwhy', qmSmGWnd, qmSmGWhy, gc_halParentLeft, gc_valParentTop, 50, 62, 720, qmSmGWh+4, gc_halLeft, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
    qmSmBody := '';
    for qmSmK:=0 to qmSmGn-1 do
    begin
@@ -893,9 +923,9 @@ begin
       qmSmBody := qmSmBody+gc_gui_breakline;
       qmSmBody := qmSmBody+ParserGetValueByKeyByHandle(qmSmUi, 'gdl'+IntToStr(qmSmK));
    end;
-   _gui_CreateText('glist', qmSmGWnd, qmSmBody, gc_halParentLeft, gc_valParentTop, 70, 66+3*qmSmLh+8, 700, qmSmGn*qmSmLh+4, gc_halLeft, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
-   qmSmText := 'To use one of them instead, deactivate the other one here and activate it.';
-   _gui_CreateText('gnote', qmSmGWnd, qmSmText, gc_halParentMiddle, gc_valParentBottomHeight, 0, -76, 0, 0, gc_halMiddle, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
+   _gui_CreateText('glist', qmSmGWnd, qmSmBody, gc_halParentLeft, gc_valParentTop, 70, qmSmGListY, 700, qmSmGn*qmSmLh+4, gc_halLeft, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
+   // Centred under the list, as the restart notice centres its wrapped note.
+   _gui_CreateText('gnote', qmSmGWnd, qmSmGEnd, gc_halParentMiddle, gc_valParentTop, 0, qmSmGEndY, 720, qmSmGEh+4, gc_halMiddle, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
    qmSmButton('bok', qmSmGWnd, gc_halParentMiddle, gc_valParentBottomHeight, 0, -28, 'OK', qmTagOk, True);
 end;
 SetGUIEventStateOnKeyDown(qmSmEventstate);

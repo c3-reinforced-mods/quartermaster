@@ -152,7 +152,7 @@ while the enabled mods' order is not the canonical one (`qm_order` `canon` =
 | `up` / `down` | Move up / Move down; `arg` = `sel` | copied into `ocmd` for `qmUiOrder`: one place up or down the Active list |
 | `move` | not sent by the window since drag was dropped; `arg` = row, `argto` = its place in the Active list afterwards | copied into `ocmd` for `qmUiOrder`; the moved row stays selected |
 | `report` | Report / Back button | switch between the lists and the Report view (`panel`) |
-| `apply` | Apply button | with changes, open the confirm dialog (`mode` = 1) and list them (`conf<k>`); with a clash in the pending set the dialog lists the clashes instead (`confblk`) |
+| `apply` | Apply button | with changes, open the confirm dialog (`mode` = 1) and list them (`conf<k>`); a clash in the pending set is a `Note:` line of that list (0.1.3; until then the dialog listed the clashes instead, `confblk`) |
 | `ok` | OK of the guard's notice; Enter or Esc in mode 3 | back to browsing (`mode` = 0) |
 | `confirm` / `cancel` | dialog buttons | `confirm` runs `qmUiApply`; a recorded request shows the restart notice (`mode` = 2); `cancel` closes the dialog |
 | `filter` | a key's release in the filter box when its text changed; `argtext` = the text | filter the Installed list |
@@ -286,8 +286,8 @@ in `ModLibraryGetData` order (mods.ini order), `<k>` a position, `<j>` a record.
 | `sel`, `side`, `panel`, `mode`, `msg` | selection, its list, 0 lists / 1 Report view, 0 browse / 1 confirm / 2 restart notice / 3 the guard's notice, message line |
 | `gl<i>`, `gdoff<i>` | the row's global scripts (`|`-joined, `qmGlobFiles`; `|` for Quartermaster and its copies); 1 when the start-up guard switched the row off at this start (see *Global scripts* below) |
 | `pcn`, `pc<k>`, `pcl<i>` | clashes of the pending set (qmUiAct, after every command): how many, one line each (at most 14; the message line shows `pc0`), and the row's clash for its Details line |
-| `confblk`, `confb<k>` | the clashes the confirm dialog shows instead of the question; its Apply is disabled and `confirm` refuses |
-| `gdopen`, `gdln`, `gdl<k>` | set by qmTick to open the window with the guard's notice; its lines (at most 14) |
+| `confblk`, `confb<k>` | what the confirm dialog shows instead of the question - an about.cfg FAIL of the pending set or one the activation check refused (a global-script clash until 0.1.3); its Apply is disabled and `confirm` refuses |
+| `gdopen`, `gdln`, `gdl<k>`, `gdwhy` | set by qmTick to open the window with the guard's notice; its lines (at most 14); the guard's rule (qm_glob `gdwhy`), which picks the notice's text: a clash, or `failed-*` - mods switched off after a start that stopped |
 | `filter`, `typed` | the filter in effect; the filter box's text at the last command (the command carries its box's text, in the New mod dialog the name box's, so closing the dialog - Create, Cancel - and Back from Mod files set it back to the filter) |
 | `topi`, `topa` | scroll positions of the two lists |
 | `confchg`, `confn`, `conf<k>` | activation changes in the confirm dialog; its left column (`+ name`, `- name`, at most 14, the last one `... and N more`) |
@@ -334,7 +334,8 @@ regenerates, and restarts the vanilla way. It is `qmTick`
 main-menu frame: it sets `uiapply` to 0 and runs `qmBoot` with qm_rt
 `runmode` = apply - the load order with these flags (qmOrder: `uiapplyord<k>`
 only when `uiapplyorder` = 1 and it lists every registered dir exactly once,
-folded; Quartermaster forced last), a generation for them, all new mods
+folded; Quartermaster forced last; it also writes chosen.cfg, see *Global
+scripts and the start-up guard* below), a generation for them, all new mods
 acknowledged (qmKnown) and a restart of kind `apply`, which only an MP mod
 sync or a SelfTest run holds (ref/boot.py). A test's request withdrawn in the
 same state that made it is never seen.
@@ -405,8 +406,8 @@ A mod's global scripts are its `data\scripts\lib\*.script` and
 the same one cannot both load (twin: `ref/guard.py`, which has the rules).
 
 - **The boot** (`qmGlobals`, after `qmKnown`) lists them for every registered
-  mod into `qm_glob` and reports every clash between enabled mods as a FAIL
-  line of the Boot block. It reads the guard's note
+  mod into `qm_glob` and reports every clash between enabled mods as a WARN
+  line of the Boot block (a FAIL until 0.1.3). It reads the guard's note
   `<save>\quartermaster\guard.cfg` (written by `src/guard/resource.pas`
   before the restart it makes): a note not yet shown (`shown` <> 1) gives one
   WARN line per mod the guard switched off, and `qm_rt` `gdshow` = 1 (with
@@ -416,24 +417,55 @@ the same one cannot both load (twin: `ref/guard.py`, which has the rules).
   come in between. It also records the enabled mods of the start in
   `<save>\quartermaster\compiled.cfg` (`d<k>`, `n`; ref/guard.py
   `compiled_values`) when they differ from the file, never on an Apply or in
-  a multiplayer sync: the set the guard trusts at the next start (plan S17,
-  revised 2026-10-02). The Boot line ends `compiled=<n> written|same|-`.
+  a multiplayer sync: the set the guard steps back to after a start that
+  stopped at "Error compiling scripts" (plan S17). Then it sets `pending` = 0
+  in the guard's record `<save>\quartermaster\compile.cfg`: a record still
+  pending at the next start is one part of the guard's proof that the start
+  before never booted (with the same mods enabled and a mark in that start's
+  log, plan S17; it was one half until the set test of 2026-10-03). The Boot line ends
+  `compiled=<n> written|same|not-saved|- pending=cleared|not-saved|-`. On
+  the same boots (never on an Apply or in a multiplayer sync) it clears the
+  window's choice `<save>\quartermaster\chosen.cfg` (*The Apply's choice*,
+  below) to `n` = 0 when it lists mods: the guard has trusted that set at
+  this start, which booted, so compiled.cfg holds it from now on. A line of
+  its own says so, `[qm] globals chosen=cleared|not-saved`; with nothing to
+  clear there is no line.
 - **Run switches** (a test run's seeded `<save>\quartermaster\`, no player has
   them): `qm_show_ui.flag` opens the window on the first main-menu frame
   (`qm_rt` `uishow`); `qm_skirmish.flag` walks the game into a skirmish on a
   stable start (`qm_rt` `skphase`, `skt`: ShowCustomGame, then DoNewGame, as
   the SW_Frontline_Protocol autotest does) - log lines `[qm] run: ...`.
-- **The window**: `qmUiModel` marks an enabled row that clashes FAIL
-  (`stsrc<i>` = `globals`, `why<i>` names the file and the other mod) and a row
-  the guard switched off (`gdoff<i>`, its Details line says why). After every
-  command `qmUiAct` checks the pending set; a clash shows on the message line,
-  in the row's Details line (`pcl<i>`), and makes the confirm dialog list the
-  clashes with Apply disabled (`confblk`). The message line wraps to the
-  window's width and takes its colour (red for a clash or an about.cfg FAIL,
-  orange for a WARN) as the text's colour rather than a `%color()%` code in
-  it. Until 2026-10-01 it was one centred line with the code in front, and a
+- **The window**: `qmUiModel` marks an enabled row that clashes WARN when
+  it reads OK, NEW or ? (`stsrc<i>` = `globals`, `why<i>` names the file and
+  the other mod) and a row the guard switched off (`gdoff<i>`, its Details line
+  says why). After every command `qmUiAct` checks the pending set; a clash
+  shows on the message line (orange, after an about.cfg FAIL), in the row's
+  Details line (`pcl<i>`), and as a `Note:` line of the confirm dialog, which
+  still asks. *Revised 2026-10-03 (0.1.3):* until then a clash row read FAIL,
+  the line was red and the dialog listed the clashes with Apply disabled
+  (`confblk`); two mods that ship the same file may still run together, and
+  the start-up guard undoes a start that stops (plan S17). The message line
+  wraps to the window's width and takes its colour (red for an about.cfg
+  FAIL, orange for a clash or a WARN) as the text's colour rather than a
+  `%color()%` code in it. Until 2026-10-01 it was one centred line with the code in front, and a
   clash naming two long mod titles ran past both edges of the window (run
   look-wsX).
+- **The Apply's choice** (*added 2026-10-03, 0.1.3*): the start-up guard
+  switches off, before the compile, an enabled mod outside the last set that
+  booted when another enabled mod ships one of its global scripts (the rule
+  is in plan S17), but two such mods may run together (an add-on built on
+  another mod ships that mod's libraries). Activating them here is the
+  player's way out: the Apply boot (qmTick runs qmBoot with `runmode` =
+  apply) writes `<save>\quartermaster\chosen.cfg` in qmOrder, right after
+  qmModsIni and only when `qm_ini` action is `written` or `same` (mods.ini
+  then holds exactly the applied rows): `d<k>` the dir of every mod the
+  applied mods.ini enables, Quartermaster too, in the new load order, and
+  `n` - compiled.cfg's layout. The guard trusts those mods at the next
+  start; that start's boot clears the file (above), and when the start stops
+  instead, the guard clears it itself and steps back. The window itself still
+  writes nothing to disk. Log: `[qm] ui apply chosen=written|not-saved
+  n=<n>`, or `[qm] ui apply chosen=- mods.ini=<action>` when mods.ini was
+  refused or not written.
 - **The notice** (mode 3): qmTick opens the window once, on the first
   main-menu frame outside a map after a guard restart (`gdshow` -> `qm_ui`
   `gdopen`); `open` then sets mode 3 with the lines `gdl<k>`; OK (tag 112),
@@ -444,6 +476,23 @@ the same one cannot both load (twin: `ref/guard.py`, which has the rules).
   DoCreate rebuilds the GUI: in run look-wsH (2026-09-30) it took the window
   right after it had opened, and the manager then ignored every `open`; in
   run look-gdfix2 (2026-10-01) the same race drew the notice again.
+  Its text follows `gdwhy`. For `conflict` the heading is "Quartermaster
+  switched off clashing mods", the body "Each of them replaces a core script
+  that another active mod replaces too, and they have not started together
+  before. With both, the game may stop at "Error compiling scripts", so
+  Quartermaster switched these mods off and restarted the game:", then the
+  list, and the last line "If they do work together, activate them here:
+  Quartermaster lets them start once and switches back if the game does not
+  start." For `failed-*` it says the last start did not reach the main menu
+  (it stopped at "Error compiling scripts", or the menu did not compile) and
+  lists the mods switched off; the report's Boot lines and the rows' Details
+  lines (`gdwhy` in qm_glob) say the same of a step, by name or without a
+  clash. *Revised 2026-10-03 (0.1.3):*
+  until then the conflict body said the game *would* stop, and the last line
+  told the player to deactivate the other mod to use one of them - written
+  when only a new subscription was judged. A mod switched on in modman may
+  run with the other one, so the text says *may* and points to the way out
+  (*The Apply's choice*, above).
 
 ### `qm_glob` - global scripts (written by `qmGlobals`, read by the boot and the window)
 
@@ -454,7 +503,8 @@ the same one cannot both load (twin: `ref/guard.py`, which has the rules).
 | `gl<i>` | the global scripts, `|`-joined |
 | `cn`, `ca<k>`, `cb<k>`, `cf<k>` | clashes between enabled mods (a before b), the first file of a's list that b ships too; at most 64 |
 | `gdn`, `gdnew` | the guard note's mods; 1 when the note was fresh at this boot |
-| `gdd<k>`, `gdt<k>`, `gdf<k>`, `gdo<k>` | dir and title of a mod the guard switched off, the file, the title of the mod that ships it already |
+| `gdd<k>`, `gdt<k>`, `gdf<k>`, `gdo<k>` | dir and title of a mod the guard switched off, the file, the title of the mod that ships it already (file and other mod empty: a step after a start that stopped, plan S17) |
+| `gdwhy` | the guard note's rule: `conflict`, `failed-names`, `failed-revert`, `failed-vanilla`, `order`; empty for a note before 0.1.3 |
 | `gdmoved`, `gdlate`, `gdlatef` | 1 when the guard moved Quartermaster to the end of mods.ini at this start (an enabled mod after it shipped one of its hook files), that mod's dir and the hook file; the Boot block says so in one OK line |
 
 `qm_rt` `gdshow`: 1 from the boot until qmTick has opened the notice.
@@ -471,7 +521,7 @@ registered mod's file into `qm_about` (qmAbout) and checks the set it loads
   settings and `abid<i>` the id they are kept under. A loaded row that breaks
   a rule of the loaded set, or whose about.cfg has a FAIL value, is FAIL
   (`stsrc<i>` = `about`, `why<i>` the problem); an OK or NEW row with a WARN
-  is WARN. A global-script clash keeps its own FAIL.
+  is WARN. A FAIL of about.cfg wins over a global-script clash's WARN.
 - **After every command** (qmUiAct): the rules of the pending set - `pe<i>`
   in the pending order `ord<k>` - into `pan` problems, `pa<k>` the text and
   `pat<k>` the tag of each (at most 14; the message line shows the first
@@ -481,10 +531,11 @@ registered mod's file into `qm_about` (qmAbout) and checks the set it loads
   of `qm_abr` with the row as `row` or `oth` (a requirement that is not
   active, a second total conversion, a taken exclusive slot, an incompatible
   mod). The message says which.
-- **Apply**: every FAIL of the pending set joins the clashes in the confirm
-  dialog's refused list (`confblk`, `confb<k>`; `confbrule` = 1 when rule
-  lines are among them, for the dialog's note), and confirm refuses; a WARN
-  goes into the dialog's Changes column as a `Note:` line and does not stop it.
+- **Apply**: every FAIL of the pending set goes into the confirm dialog's
+  refused list (`confblk`, `confb<k>`; `confbrule` = 1 when rule lines are
+  among them, for the dialog's note), and confirm refuses; a WARN - and,
+  since 0.1.3, a global-script clash - goes into the dialog's Changes column
+  as a `Note:` line and does not stop it.
 - **Auto-sort** (`autosort`): the pending order becomes `cord<k>`, the
   canonical order v2 (qmModList: Kahn's sort of the about.cfg constraints
   over Workshop id / folder name, Quartermaster last).

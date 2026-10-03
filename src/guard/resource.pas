@@ -11,14 +11,23 @@ requires: guardstamp, h1mul, h1mod, h2mul, h2mod
 //! libraries do not exist at this point, and a name that does not resolve
 //! here stops the game before anything can recover it.
 //!
-//! Two things it puts right before they can go wrong:
-//!   - a mod it does not trust that ships a global script an enabled mod
-//!     ships already is taken out of this start with SteamSyncWorkshopItems
-//!     (verdict 6) and switched off in mods.ini. Trusted are the mods of the
-//!     last start that booted (compiled.cfg, written by qmGlobals); without
-//!     that record the mods of known.cfg, as until 0.1.2 - when a known mod
-//!     switched on in modman next to a clashing one went through (32 at once
-//!     on 2026-10-02, "Error compiling scripts");
+//! What it puts right before the libraries compile:
+//!   - a mod that has not started with the others - a new subscription, or
+//!     one switched on in modman since the last start that booted
+//!     (compiled.cfg, qmGlobals) and not applied in the window since
+//!     (chosen.cfg) - that ships a global script an enabled mod ships
+//!     already is taken out of this start with SteamSyncWorkshopItems
+//!     (verdict 6) and switched off in mods.ini. Without compiled.cfg only a
+//!     new subscription (not in known.cfg) is judged. The engine's dialog
+//!     for a start that stops is a string constant in cossacks.exe, so this
+//!     is the one way it does not come up (until 0.1.2 a mod switched on in
+//!     modman was not judged; 32 at once on 2026-10-02 stopped two starts in
+//!     a row);
+//!   - after a start that stopped (compile.cfg still pending and naming the
+//!     mods enabled now, a CompileFramework or DoCreate compile error in that
+//!     start's log), in steps a start each: the mods outside the last start
+//!     that booted that clash by name, else all of those, else every mod but
+//!     Quartermaster (ref/guard.py fallback);
 //!   - Quartermaster loads last: an enabled mod after it that ships one of its
 //!     hook files would replace the hook, and Quartermaster would boot late or
 //!     not at all and never restart into its own order (proof run p4 of
@@ -113,8 +122,137 @@ begin
    end;
 end;
 
+// After a start that stopped (ref/guard.py failed): compile.cfg, written
+// before that start compiled, is still pending - pending = 1, its boot never
+// set 0, or no pending key at all, a record of 0.1.2 - and that start's log
+// holds a CompileFramework line (the libraries did not compile) or "Compile
+// script error: DoCreate" (the main menu did not; of 1268 logs, the 19 with
+// it never reached the menu). That log is the second newest cos_*.log by
+// FileAge, the newest being this start's (qmLastStart finds it the same
+// way); it is read the way resource.script is read above, at most 262144
+// Integers. Whether that start had the mods enabled now (qmGdFset, qmGdFn)
+// is told once the mod list is read: only then is it qmGdFailed.
+var qmGdFailed : Boolean = False;
+var qmGdFailLog : Boolean = False;
+var qmGdFset : String = '|';
+var qmGdFn : Integer = 0;
+if (qmGdWhy='') then
+begin
+   var qmGdPc : Integer = ParserSelectByKey('qm_guard_compile');
+   if (qmGdPc=0) then
+   qmGdPc := ParserCreate('qm_guard_compile');
+   ParserClearByHandle(qmGdPc);
+   var qmGdPend : Boolean = False;
+   if (FileAge(qmGdSave+'compile.cfg')<>-1) then
+   if (ParserLoadFromFileByHandle(qmGdPc, qmGdSave+'compile.cfg')) then
+   begin
+      qmGdV := ParserGetValueByKeyByHandle(qmGdPc, 'pending');
+      if (qmGdV='1') or (qmGdV='') then
+      qmGdPend := True;
+      // Its mods (ref/guard.py compiled_dirs): a count of at least 1.
+      qmGdFn := ParserGetIntValueByKeyByHandle(qmGdPc, 'n');
+      if (qmGdFn>512) then
+      qmGdFn := 512;
+      for qmGdK:=0 to qmGdFn-1 do
+      begin
+         qmGdV := StrToLowerCase(ParserGetValueByKeyByHandle(qmGdPc, 'd'+IntToStr(qmGdK)));
+         while (StrPos('/', qmGdV)>0) do
+         qmGdV := StrReplace(qmGdV, '/', '\');
+         qmGdFset := qmGdFset+qmGdV+'|';
+      end;
+   end;
+   if (qmGdPend) and (qmGdFn>0) then
+   begin
+      var qmGdLp : Integer = ParserSelectByKey('qm_guard_logs');
+      if (qmGdLp=0) then
+      begin
+         ParserCreate('qm_guard_logs');
+         qmGdLp := ParserSelectByKey('qm_guard_logs');
+      end;
+      ParserClearByHandle(qmGdLp);
+      ParserGetFilesInRoot(GetAppSaveDirectoryPath+'log\cos_*.log');
+      var qmGdLa1 : Integer = -1;
+      var qmGdLa2 : Integer = -1;
+      var qmGdLn1 : String = '';
+      var qmGdLn2 : String = '';
+      var qmGdLa : Integer;
+      var qmGdLnm : String;
+      for qmGdK:=0 to ParserGetCountByHandle(qmGdLp)-1 do
+      begin
+         qmGdLnm := ParserGetValueByIndexByHandle(qmGdLp, qmGdK);
+         qmGdLa := FileAge(GetAppSaveDirectoryPath+'log\'+qmGdLnm);
+         if (qmGdLa>qmGdLa1) then
+         begin
+            qmGdLa2 := qmGdLa1;
+            qmGdLn2 := qmGdLn1;
+            qmGdLa1 := qmGdLa;
+            qmGdLn1 := qmGdLnm;
+         end
+         else
+         if (qmGdLa>qmGdLa2) then
+         begin
+            qmGdLa2 := qmGdLa;
+            qmGdLn2 := qmGdLnm;
+         end;
+      end;
+      if (qmGdLn2<>'') then
+      begin
+         var qmGdLf : Integer = OpenFileRead(GetAppSaveDirectoryPath+'log\'+qmGdLn2);
+         var qmGdPat : String = 'CompileFramework';
+         var qmGdPat2 : String = 'Compile script error: DoCreate';
+         var qmGdPm : Integer = 0;
+         var qmGdPm2 : Integer = 0;
+         var qmGdLv : Integer = 0;
+         var qmGdLb : Integer;
+         var qmGdLs : Integer;
+         var qmGdLi : Integer = 0;
+         var qmGdLend : Boolean = False;
+         while (not qmGdLend) and (not qmGdFailLog) and (qmGdLi<262144) do
+         begin
+            qmGdLv := 0;
+            ReadInteger(qmGdLf, qmGdLv);
+            qmGdLi := qmGdLi+1;
+            for qmGdLs:=0 to 3 do
+            if (not qmGdLend) and (not qmGdFailLog) then
+            begin
+               qmGdLb := (qmGdLv shr (qmGdLs*8)) and 255;
+               if (qmGdLb=0) then
+               qmGdLend := True
+               else
+               begin
+                  // 'C' is in the word only at its start: a mismatch starts over.
+                  if (qmGdLb=Ord(SubStr(qmGdPat, qmGdPm+1, 1))) then
+                  qmGdPm := qmGdPm+1
+                  else
+                  if (qmGdLb=Ord(SubStr(qmGdPat, 1, 1))) then
+                  qmGdPm := 1
+                  else
+                  qmGdPm := 0;
+                  // The second has a 'C' at its start and one in 'DoCreate':
+                  // after '...DoC' an 'o' makes 'Co', its start again.
+                  if (qmGdLb=Ord(SubStr(qmGdPat2, qmGdPm2+1, 1))) then
+                  qmGdPm2 := qmGdPm2+1
+                  else
+                  if (qmGdPm2=25) and (qmGdLb=Ord(SubStr(qmGdPat2, 2, 1))) then
+                  qmGdPm2 := 2
+                  else
+                  if (qmGdLb=Ord(SubStr(qmGdPat2, 1, 1))) then
+                  qmGdPm2 := 1
+                  else
+                  qmGdPm2 := 0;
+                  if (qmGdPm=16) or (qmGdPm2=30) then
+                  qmGdFailLog := True;
+               end;
+            end;
+         end;
+         CloseFile(qmGdLf);
+      end;
+   end;
+end;
+
 // The mods of the last start that booted (ref/guard.py compiled_dirs): a
-// count of at least 1 - a boot always has Quartermaster on - or no record.
+// count of at least 1 - a boot always has Quartermaster on - or no record
+// (after a failed start the good set is then the game alone).
 var qmGdGood : String = '|';
 var qmGdHaveC : Boolean = False;
 if (qmGdWhy='') then
@@ -142,27 +280,47 @@ begin
       end;
    end;
 end;
-// What the trust comes from (ref/guard.py trusted_set): compiled, known, none.
-var qmGdBasis : String = '-';
-var qmGdTrust : String = '|';
+// The mods the player applied in the window since the last boot (chosen.cfg,
+// the same flat form; the boot clears it to n = 0): trusted on an ordinary
+// start, so a pair that names alone would refuse can still be run.
+var qmGdChosen : String = '';
+var qmGdHaveCh : Boolean = False;
 if (qmGdWhy='') then
 begin
-   qmGdBasis := 'none';
-   if (qmGdHave) then
+   var qmGdCh : Integer = ParserSelectByKey('qm_guard_chosen');
+   if (qmGdCh=0) then
+   qmGdCh := ParserCreate('qm_guard_chosen');
+   ParserClearByHandle(qmGdCh);
+   if (FileAge(qmGdSave+'chosen.cfg')<>-1) then
+   if (ParserLoadFromFileByHandle(qmGdCh, qmGdSave+'chosen.cfg')) then
    begin
-      qmGdBasis := 'known';
-      qmGdTrust := qmGdKnown;
-   end;
-   if (qmGdHaveC) then
-   begin
-      qmGdBasis := 'compiled';
-      qmGdTrust := qmGdGood;
+      var qmGdChn : Integer = ParserGetIntValueByKeyByHandle(qmGdCh, 'n');
+      if (qmGdChn>512) then
+      qmGdChn := 512;
+      if (qmGdChn>0) then
+      begin
+         qmGdHaveCh := True;
+         for qmGdK:=0 to qmGdChn-1 do
+         begin
+            qmGdV := StrToLowerCase(ParserGetValueByKeyByHandle(qmGdCh, 'd'+IntToStr(qmGdK)));
+            while (StrPos('/', qmGdV)>0) do
+            qmGdV := StrReplace(qmGdV, '/', '\');
+            qmGdChosen := qmGdChosen+qmGdV+'|';
+         end;
+      end;
    end;
 end;
+// What claims first (ref/guard.py decide, Plan.basis), set once the mod list
+// is read: on an ordinary start the last start that booted and the chosen
+// set, without that record known.cfg - every mod but a new subscription;
+// after a failed start the good set. qmGdJudge: whether any mod is judged at
+// all (an ordinary start without either record is a first boot).
+var qmGdBasis : String = '-';
+var qmGdTrust : String = '|';
+var qmGdJudge : Boolean = False;
 
-// Every registered mod: 0 off or Quartermaster, 1 trusted and on, 2 not
-// trusted and on, 3 not trusted and kept, 4 not trusted and switched off.
-// Without a record (a first boot) every mod is trusted: nothing is switched off.
+// Every registered mod: 0 off or Quartermaster, 1 claims first (known, or in
+// the good set) and on, 2 judged and on, 3 judged and kept, 4 switched off.
 var qmGdN : Integer = ModLibraryGetCount;
 if (qmGdN>512) then
 qmGdN := 512;
@@ -192,6 +350,8 @@ var qmGdSelf : Integer = -1;
 var qmGdLate : Integer = 0;
 var qmGdLateDir : String = '';
 var qmGdLateFile : String = '';
+// The note's `why` (ref/guard.py Plan.why of an `off` plan).
+var qmGdRule : String = 'conflict';
 if (qmGdWhy='') then
 begin
    var qmGdFp : Integer = ParserSelectByKey('qm_guard_files');
@@ -229,9 +389,6 @@ begin
       if (not qmGdDis) and (not ModLibGetFileExist(qmGdI, 'data\quartermaster\core.aix')) then
       begin
          qmGdState[qmGdI] := 1;
-         if (qmGdOk) and (qmGdBasis<>'none') then
-         if (StrPos('|'+qmGdFold[qmGdI]+'|', qmGdTrust)=0) then
-         qmGdState[qmGdI] := 2;
          qmGdFp := ParserSelectByKey('qm_guard_files');
          ParserClearByHandle(qmGdFp);
          ParserGetFilesInRoot(qmGdD+'\data\scripts\lib\*.script');
@@ -243,6 +400,50 @@ begin
          qmGdFiles[qmGdI] := qmGdFiles[qmGdI]+'dmscript.source|';
       end;
    end;
+   // The start before stopped only if it had the mods enabled now (ref/guard.py
+   // same_set): as many, every one the guard can compare among them. A set
+   // changed since - the player switched the culprit off in modman, as the
+   // engine's dialog tells him to, or a guard restart Steam did not carry
+   // out - starts as an ordinary one, so no step switches off more.
+   if (qmGdFailLog) then
+   begin
+      var qmGdOnN : Integer = 0;
+      var qmGdSame : Boolean = True;
+      for qmGdI:=0 to qmGdN-1 do
+      if (qmGdOn[qmGdI]=1) then
+      begin
+         qmGdOnN := qmGdOnN+1;
+         if (qmGdFold[qmGdI]<>'') and (StrPos('|'+qmGdFold[qmGdI]+'|', qmGdFset)=0) then
+         qmGdSame := False;
+      end;
+      qmGdFailed := (qmGdSame) and (qmGdOnN=qmGdFn);
+   end;
+   qmGdBasis := 'none';
+   if (qmGdFailed) then
+   begin
+      qmGdJudge := True;
+      qmGdTrust := qmGdGood;
+      if (qmGdHaveC) then
+      qmGdBasis := 'compiled';
+   end
+   else
+   if (qmGdHaveC) then
+   begin
+      qmGdJudge := True;
+      qmGdBasis := 'compiled';
+      qmGdTrust := qmGdGood+qmGdChosen;
+   end
+   else
+   if (qmGdHave) then
+   begin
+      qmGdJudge := True;
+      qmGdBasis := 'known';
+      qmGdTrust := qmGdKnown;
+   end;
+   for qmGdI:=0 to qmGdN-1 do
+   if (qmGdState[qmGdI]=1) and (qmGdFold[qmGdI]<>'') and (qmGdJudge) then
+   if (StrPos('|'+qmGdFold[qmGdI]+'|', qmGdTrust)=0) then
+   qmGdState[qmGdI] := 2;
    // Pass 1: the trusted mods claim their global scripts.
    for qmGdI:=0 to qmGdN-1 do
    if (qmGdState[qmGdI]=1) and (StrLength(qmGdFiles[qmGdI])>1) then
@@ -286,6 +487,43 @@ begin
          qmGdBy[qmGdI] := qmGdJ;
       end;
    end;
+   // After a failed start (ref/guard.py fallback): the names step switched
+   // something off, or else every mod outside the good set goes (revert), or
+   // - none outside it, the good set itself failed - every mod but
+   // Quartermaster (vanilla). Without a clash: no file, no other mod.
+   if (qmGdFailed) then
+   begin
+      qmGdRule := 'failed-names';
+      if (qmGdOffN=0) then
+      begin
+         qmGdC := 0;
+         for qmGdI:=0 to qmGdN-1 do
+         if (qmGdState[qmGdI]=3) then
+         qmGdC := qmGdC+1;
+         if (qmGdC>0) then
+         begin
+            qmGdRule := 'failed-revert';
+            for qmGdI:=0 to qmGdN-1 do
+            if (qmGdState[qmGdI]=3) then
+            begin
+               qmGdState[qmGdI] := 4;
+               qmGdOffN := qmGdOffN+1;
+               qmGdOffKey := qmGdOffKey+qmGdFold[qmGdI]+'|';
+            end;
+         end
+         else
+         begin
+            qmGdRule := 'failed-vanilla';
+            for qmGdI:=0 to qmGdN-1 do
+            if (qmGdState[qmGdI]=1) and (qmGdFold[qmGdI]<>'') then
+            begin
+               qmGdState[qmGdI] := 4;
+               qmGdOffN := qmGdOffN+1;
+               qmGdOffKey := qmGdOffKey+qmGdFold[qmGdI]+'|';
+            end;
+         end;
+      end;
+   end;
    // Quartermaster last: enabled mods after it (none switched off here) that
    // ship one of its hook files (plan S5).
    if (qmGdSelf>=0) and (qmGdFold[qmGdSelf]<>'') then
@@ -319,12 +557,27 @@ begin
    end;
    if (qmGdLate>0) then
    qmGdOffKey := qmGdOffKey+'order:'+qmGdFold[qmGdSelf]+'|';
+   if (qmGdOffN=0) then
+   qmGdRule := 'order';
    if (qmGdOffN=0) and (qmGdLate=0) then
    begin
       qmGdWhy := 'clean';
+      if (qmGdFailed) then
+      qmGdWhy := 'failed-alone'
+      else
       if (qmGdBasis='none') then
       qmGdWhy := 'first-boot';
    end;
+end;
+
+// After a failed start the chosen set is spent: a pair the player chose that
+// stopped the start is not trusted at a later one either.
+if (qmGdFailed) and (qmGdHaveCh) then
+begin
+   var qmGdChw : Integer = ParserSelectByKey('qm_guard_chosen');
+   ParserClearByHandle(qmGdChw);
+   ParserSetValueByKeyByHandle(qmGdChw, 'n', '0');
+   ParserSaveToFileByHandle(qmGdChw, qmGdSave+'chosen.cfg');
 end;
 
 // The loop test: the previous start was a guard restart for the same changes.
@@ -340,6 +593,8 @@ begin
    qmGdWhy := 'loop';
 end;
 
+// True once SteamSyncWorkshopItems took the switched-off mods out of this start.
+var qmGdTook : Boolean = False;
 if (qmGdWhy='') then
 begin
    var qmGdIni : Integer = ParserSelectByKey('qm_guard_ini');
@@ -374,6 +629,7 @@ begin
                ParserSetValueByKeyByHandle(qmGdLe, 'dis', 'True');
             end;
             qmGdSync := SteamSyncWorkshopItems(qmGdL);
+            qmGdTook := True;
          end;
       end;
       // mods.ini as loaded, the switched-off mods off, and Quartermaster's
@@ -423,6 +679,7 @@ begin
       ParserSetValueByKeyByHandle(qmGdNote, 'key', qmGdOffKey);
       ParserSetValueByKeyByHandle(qmGdNote, 'n', IntToStr(qmGdOffN));
       ParserSetValueByKeyByHandle(qmGdNote, 'moved', IntToStr(qmGdMoved));
+      ParserSetValueByKeyByHandle(qmGdNote, 'why', qmGdRule);
       if (qmGdLate>0) then
       begin
          ParserSetValueByKeyByHandle(qmGdNote, 'latedir', qmGdLateDir);
@@ -444,7 +701,10 @@ begin
          qmGdV := '?';
          if (qmGdBy[qmGdI]>=0) then
          qmGdV := qmGdDir[qmGdBy[qmGdI]];
-         log('[qm-guard] off '+qmGdDir[qmGdI]+' ('+qmGdHit[qmGdI]+', shipped by '+qmGdV+')');
+         if (qmGdHit[qmGdI]<>'') then
+         log('[qm-guard] off '+qmGdDir[qmGdI]+' ('+qmGdHit[qmGdI]+', shipped by '+qmGdV+')')
+         else
+         log('[qm-guard] off '+qmGdDir[qmGdI]+' ('+qmGdRule+')');
          qmGdK := qmGdK+1;
       end;
       ParserSaveToFileByHandle(qmGdNote, qmGdSave+'guard.cfg');
@@ -461,9 +721,17 @@ end;
 // The mods this start compiles with, in load order: a CompileFramework error's
 // line number maps onto their libraries (qmLastStart reads the record at the
 // next start that gets as far as Quartermaster). The previous start's record
-// becomes compile.prev.cfg first. Not on a guard restart (the next life
-// records its own set) and not where the mod list was not read.
-if (qmGdWhy='clean') or (qmGdWhy='first-boot') or (qmGdWhy='loop') or (qmGdWhy='no-mods-ini') then
+// becomes compile.prev.cfg first. Not where the mod list was not read. A guard
+// restart is recorded too: the life it ends still compiles the libraries
+// before the engine restarts, and stops at "Error compiling scripts" when its
+// set has a clash. Until 2026-10-03 it was not (the next life was to record
+// its own set); what it cost: with Quartermaster put in the middle of
+// mods.ini, the guard restarted to move it last, that life stopped at the
+// error, and the next start - its record not pending - ran the same set into
+// the error a second time (the owner's starts of 2026-10-03 08:45 and 08:46).
+// The mods SteamSyncWorkshopItems took out of the running start are not in
+// the set it compiles (run g8, verdict 6).
+if (qmGdWhy='clean') or (qmGdWhy='first-boot') or (qmGdWhy='loop') or (qmGdWhy='no-mods-ini') or (qmGdWhy='failed-alone') or (qmGdWhy='restart') then
 begin
    var qmGdCp : Integer = ParserSelectByKey('qm_guard_compile');
    if (qmGdCp=0) then
@@ -475,13 +743,15 @@ begin
    ParserClearByHandle(qmGdCp);
    qmGdK := 0;
    for qmGdI:=0 to qmGdN-1 do
-   if (qmGdOn[qmGdI]=1) then
+   if (qmGdOn[qmGdI]=1) and ((not qmGdTook) or (qmGdState[qmGdI]<>4)) then
    begin
       ParserSetValueByKeyByHandle(qmGdCp, 'd'+IntToStr(qmGdK), qmGdDir[qmGdI]);
       ParserSetValueByKeyByHandle(qmGdCp, 't'+IntToStr(qmGdK), qmGdTit[qmGdI]);
       qmGdK := qmGdK+1;
    end;
    ParserSetValueByKeyByHandle(qmGdCp, 'n', IntToStr(qmGdK));
+   // Until this start's boot sets 0: the `failed` test of the next start.
+   ParserSetValueByKeyByHandle(qmGdCp, 'pending', '1');
    ParserSaveToFileByHandle(qmGdCp, qmGdSave+'compile.cfg');
 end;
 log('[qm-guard] '+qmGdWhy+' mods='+IntToStr(qmGdN)+' age='+IntToStr(qmGdAge)+' game='+qmGdStamp+' basis='+qmGdBasis);

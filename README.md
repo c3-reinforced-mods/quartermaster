@@ -15,9 +15,13 @@ Version 0.1.3 (beta). Players get it from the game's Steam Workshop.
   line, against the game's own copy; where two mods change the same lines, the mod later
   in the load order wins. Every merged file is compiled by the game before it is used; one
   that does not compile falls back to a copy that does.
-- **Protects the start:** a new subscription that ships a core script an enabled mod
-  ships too (two copies of `scripts\lib\*.script` cannot load together) is switched off
-  before the scripts compile, and the player is told which one and why.
+- **Protects the start:** two copies of a core script (`scripts\lib\*.script`) cannot
+  load together. A new subscription, or a mod switched on in the game's Mod Manager, that
+  replaces the same core script as another active mod and has not started together with
+  it before is switched off before the scripts compile, and the player is told which one
+  and why. A pair that does work together can be activated in Quartermaster's window. If
+  a start still stops at "Error compiling scripts", the next start steps back towards
+  the last set of mods that started and restarts the game.
 - **Keeps the player's load order:** mods load in the order mods.ini already has;
   Quartermaster only puts itself last. The order can be changed in its window, or by
   Auto-sort.
