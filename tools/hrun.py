@@ -45,6 +45,9 @@ Options:
                             mods\ folder, not enabled) off at the top of mods.ini:
                             repeatable, in that order; the manager's Installed list
                             follows mods.ini's order, so it shows NAME first
+    --after-qm NAME         compose, and list the installed mod NAME (a Workshop id or a
+                            mods\ folder) on after Quartermaster: repeatable, in that
+                            order - a player who put Quartermaster in the middle by hand
     --canonical             compose, every row in Quartermaster's canonical order
                             (ref/order.py; itself last) instead of the order above -
                             the start of a player whose mods.ini it has put in order
@@ -237,6 +240,7 @@ class Options:
     canonical: bool = False
     disable: list = field(default_factory=list)
     first: list = field(default_factory=list)
+    after_qm: list = field(default_factory=list)
     qm_folder: str = None
     launch: str = "cossacks.exe"
     keep_deployed: bool = False
@@ -305,7 +309,7 @@ def installed_workshop(game):
 
 def composing(opts):
     return bool(opts.enable or opts.unlisted or opts.compose or opts.canonical or opts.disable
-                or opts.first)
+                or opts.first or opts.after_qm)
 
 
 def mod_dir(game, name):
@@ -318,21 +322,24 @@ def mod_dir(game, name):
 def composed_rows(opts, listing):
     """`[(dir, dis)]` of a composed mods.ini, in load order: every other mod
     off, then the enabled ones in the order given, then the deployed folders
-    (Quartermaster last)."""
+    (Quartermaster last, or followed by the --after-qm ones)."""
     from ref.order import FALSE, TRUE
     game = opts.game_dir
     deployed = [name for name, _src in _deploy_sources(opts)]
     local = [n[:-1] for n in listing if n.endswith("/")]
     on = [mod_dir(game, n) for n in opts.enable]
+    after = [mod_dir(game, n) for n in opts.after_qm]
     rows = [(mod_dir(game, n), TRUE) for n in installed_workshop(game)
-            if n not in opts.enable and n not in opts.unlisted]
+            if n not in opts.enable and n not in opts.unlisted and n not in opts.after_qm]
     rows += [(mod_dir(game, n), TRUE) for n in local
-             if n not in opts.enable and n not in deployed and n not in opts.unlisted]
+             if n not in opts.enable and n not in deployed and n not in opts.unlisted
+             and n not in opts.after_qm]
     rows += [(d, FALSE) for d in on]
     qm = [n for n in deployed if n == opts.qm_folder]
     rows += [(mod_dir(game, n), TRUE if n in opts.disable else FALSE) for n in deployed
              if n not in opts.enable and n not in qm and n not in opts.unlisted]
     rows += [(mod_dir(game, n), FALSE) for n in qm]
+    rows += [(d, FALSE) for d in after]
     if opts.first:
         top = [mod_dir(game, n) for n in opts.first]
         rows = [r for d in top for r in rows if r[0] == d] + [r for r in rows if r[0] not in top]
@@ -372,6 +379,14 @@ def compose_problems(opts, listing):
             out.append("--first %s: not an installed Workshop item or a folder in mods\\" % n)
         if n in opts.enable or n in opts.unlisted or n in deployed:
             out.append("--first %s is also enabled, unlisted or deployed" % n)
+    for n in opts.after_qm:
+        if n not in have and n not in local:
+            out.append("--after-qm %s: not an installed Workshop item or a folder in mods\\"
+                       % n)
+        if n in opts.enable or n in opts.unlisted or n in opts.first or n in deployed:
+            out.append("--after-qm %s is also enabled, unlisted, first or deployed" % n)
+    if len(set(opts.after_qm)) != len(opts.after_qm):
+        out.append("--after-qm names a mod twice")
     if len(set(opts.enable)) != len(opts.enable):
         out.append("--enable names a mod twice")
     if len(set(opts.first)) != len(opts.first):
@@ -1327,6 +1342,7 @@ def parse_args(argv):
     p.add_argument("--canonical", action="store_true")
     p.add_argument("--disable", action="append", default=[])
     p.add_argument("--first", action="append", default=[])
+    p.add_argument("--after-qm", action="append", default=[], dest="after_qm")
     p.add_argument("--qm-folder")
     p.add_argument("--launch", default="cossacks.exe")
     p.add_argument("--keep-deployed", action="store_true")

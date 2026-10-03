@@ -858,6 +858,26 @@ def test_first_lists_an_installed_mod_off_at_the_top_of_the_composed_file(w):
         assert ini_bytes(w) == ODD_MODS_INI
 
 
+def test_after_qm_enables_an_installed_mod_after_quartermaster(w):
+    workshop_items(w, "111", "222", "333")
+    seen = {}
+    game = FakeGame(w, BOOTS, on_launch=lambda g: seen.setdefault("ini", ini_bytes(w)))
+    code, _summary = hrun.run(options(w, enable=["222"], after_qm=["333"]), game, lambda *_: None)
+    assert code == 0
+    rows, problem = order.parse_mods_ini(seen["ini"])
+    assert problem is None
+    assert [d for d, dis in rows if dis == b"False"] == [
+        b"..\\..\\workshop\\content\\333420\\222", b"mods\\Quartermaster",
+        b"..\\..\\workshop\\content\\333420\\333"]
+    assert ini_bytes(w) == ODD_MODS_INI
+    # A name that is not installed, or one also enabled, is refused.
+    for kw in ({"after_qm": ["999"]}, {"enable": ["222"], "after_qm": ["222"]}):
+        lines = []
+        code, _summary = hrun.run(options(w, **kw), FakeGame(w, BOOTS), lines.append)
+        assert code == 2 and any("--after-qm" in ln for ln in lines)
+        assert ini_bytes(w) == ODD_MODS_INI
+
+
 def test_follow_bricks_waits_past_a_brick_line_for_the_next_life(w):
     lives = [["LOG|  4 |[qmg] life=1", "ERROR| 9 |CompileFramework() - compile global script error"],
              ["LOG|  4 |[qmg] life=2", "LOG|  5 |[qmg] done"]]
