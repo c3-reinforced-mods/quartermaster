@@ -57,24 +57,35 @@ reaches `EventQmManager` even if drawing stops half way.
 `StateMachineStateAdd` / `StateMachineStateAddCodeLine`, every line before the
 state first runs (probe 9a verified the mechanism with real clicks).
 
-**Silent existence check: none exists.** The engine exports no state count;
-the only name lookups (`StateMachineGetStateIndByName`,
+**No lookup by name is silent when the name is missing.** The engine exports
+no state count; the name lookups (`StateMachineGetStateIndByName`,
 `StateMachineGetStateHndByName`) go through `TXStateMachine.IndexOfState`,
 which logs one ERROR per lookup of a missing name (probe 10). Vanilla never
-checks for a state. A lookup of a present name is silent, so the check only
-looks up what should be there:
+checks for a state. Until 0.1.3 the check used one such lookup and so cost one
+ERROR line (`IndexOfState(ShowQmManager)`) at the first main menu after every
+battle - harmless, but it read like a fault in the log. A lookup of a present
+name is silent, so the check now asks the other way round, by index:
 
 - `ready` = 0 (new process): the GUI machine was just read from `menu.aix`, so
-  both states are added without a lookup.
-- `ready` = 1: one lookup of `ShowQmManager` confirms it. It misses only after
-  a map load, which reloads the whole GUI machine and drops both states
-  together (probe 10). That costs exactly one ERROR line per return to the
-  main menu from a battle, and both states are added again.
+  both states are added without a lookup, and the index `ShowQmManager` got is
+  kept in `qm_ui` `showidx` (the log line `ui ensure: added ... index=` shows it).
+- `ready` = 1: the name at `showidx` (`StateMachineGetStateNameByInd`) must be
+  `ShowQmManager`. A map load reloads the whole GUI machine and drops both
+  states together (probe 10), so the index is past the end of the list - the
+  states were added at 142 and 143 after `menu.aix`'s 142 - or holds another
+  state; the name differs, and both states are added again.
 - Outside the main menu the state does nothing.
 
-Not yet tested: whether `StateMachineGetStateNameByInd` answers silently for an
-index past the end. If it does, remembering the index at add time would make
-the check fully silent.
+**Checked in game (run g17b1, 2026-10-05):** a skirmish the run switch
+started and the player left through the menu. At the first main-menu DoCreate
+after it the read at the remembered index (142, past the end of the reloaded
+list) answered silently: no `ERROR` line and no `IndexOfState` line, `screens
+gone`, both states added again at 142 and 143, `ready=1 adds=2`, and the
+window opened afterwards (`ui show ... windows=1`). `tools/m6cases.py log RUN
+--battles 1` passes. Only that one kind of start was run; the rule of
+`m6cases.py` fails on any `ERROR` line of that DoCreate before `screens gone`, so
+another kind (a campaign mission, a loaded save, a LAN battle) that behaved
+differently would show.
 
 ## Status, pending marks and Apply
 
@@ -271,6 +282,7 @@ in `ModLibraryGetData` order (mods.ini order), `<k>` a position, `<j>` a record.
 |---|---|
 | `ready` | 1 while both screen states are in the GUI machine; the EventMainMenu hook opens the window only then |
 | `show`, `event` | 1 once that state was added and not known to be lost |
+| `showidx` | the index `ShowQmManager` got when it was added; the check reads the name there (a different name, or none: the states are gone) |
 | `adds`, `checks` | times the pair was added / confirmed (run evidence) |
 | `n`, `self` | rows; Quartermaster's row or -1 (last enabled mod with `data\quartermaster\core.aix`) |
 | `dir<i>`, `name<i>`, `org<i>` | dir as the engine lists it; title, else `last`, else dir; origin text (Workshop, Local, Local copy, Other, Quartermaster) |

@@ -265,15 +265,54 @@ def test_log_rules_hold_for_a_clean_boot():
     assert problems == [] and facts["present_checks"] == 1
 
 
-def test_log_rules_allow_one_missed_lookup_per_battle():
-    after = ("ui ensure: screens gone (a map load reloaded the GUI machine); adding them again",
-             "ui ensure: added ShowQmManager lines=338 index=142",
-             "ui ensure: added EventQmManager lines=132 index=143",
-             "ui ensure: ready=1 adds=2 from .\\data\\quartermaster\\ui\\")
-    lines = _log(*(BOOT + CYCLE)) + _log(*after, errors=("ShowQmManager",))
-    assert m6cases.log_problems(lines, battles=1)[0] == []
-    # Without the battle, the same log is wrong twice over.
-    assert len(m6cases.log_problems(lines, battles=0)[0]) >= 2
+AFTER = ("ui ensure: screens gone (a map load reloaded the GUI machine); adding them again",
+         "ui ensure: added ShowQmManager lines=338 index=142",
+         "ui ensure: added EventQmManager lines=132 index=143",
+         "ui ensure: ready=1 adds=2 from .\\data\\quartermaster\\ui\\")
+
+
+def test_log_rules_want_a_return_from_a_battle_to_cost_no_error_line():
+    lines = _log(*(BOOT + CYCLE)) + _log(*AFTER)
+    problems, facts = m6cases.log_problems(lines, battles=1)
+    assert problems == [] and (facts["gone"], facts["gone_errors"]) == (1, 0)
+    # The same log without a battle: a `screens gone` line nobody asked for.
+    assert any("'screens gone' lines" in p for p in m6cases.log_problems(lines, battles=0)[0])
+    # A battle that left no such line is as wrong.
+    assert any("'screens gone' lines" in p
+               for p in m6cases.log_problems(_log(*(BOOT + CYCLE)), battles=1)[0])
+
+
+def test_log_rules_catch_the_lookup_the_old_check_made():
+    lines = _log(*(BOOT + CYCLE)) + _log(*AFTER, errors=("ShowQmManager",))
+    problems = m6cases.log_problems(lines, battles=1)[0]
+    assert any("IndexOfState" in p for p in problems)
+    assert any("in the DoCreate before a 'screens gone'" in p for p in problems)
+
+
+def test_log_rules_catch_any_error_line_before_screens_gone():
+    """Whatever the engine says for an index past the end counts."""
+    lines = (_log(*(BOOT + CYCLE)) + ["LOG|  7 |...DoCreate started...",
+                                     "ERROR| 9 |error (): TXStateMachine.GetStateName(142)"]
+             + ["LOG| 30 |[qm] " + t for t in AFTER])
+    problems, facts = m6cases.log_problems(lines, battles=1)
+    assert facts["gone_errors"] == 1 and facts["missed_lookups"] == 0
+    assert any("in the DoCreate before a 'screens gone'" in p for p in problems)
+
+
+def test_log_rules_look_at_the_whole_docreate_before_screens_gone():
+    """Review fix: an ERROR a few lines up, in the same DoCreate, counts; one in
+    an earlier DoCreate (the engine's own start-up lines) does not."""
+    tail = ["LOG| 40 |...DoCreate started...",
+            "ERROR| 41 |error (): TXStateMachine.GetStateName(142)",
+            "TIM| 42 |...InitMap finished...",
+            "LOG| 43 |OnResize : x=3840 y=2160"] + ["LOG| 50 |[qm] " + t for t in AFTER]
+    lines = _log(*(BOOT + CYCLE)) + tail
+    problems, facts = m6cases.log_problems(lines, battles=1)
+    assert facts["gone_errors"] == 1
+    assert any("in the DoCreate before a 'screens gone'" in p for p in problems)
+    early = ["ERROR|  3 |FileStreamExists: C:\\Users\\x\\Documents\\cossacks\\mods.restore"]
+    clean = early + _log(*(BOOT + CYCLE)) + [l for l in tail if not l.startswith("ERROR")]
+    assert m6cases.log_problems(clean, battles=1)[1]["gone_errors"] == 0
 
 
 @pytest.mark.parametrize("change, needle", [

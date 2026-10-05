@@ -41,9 +41,15 @@ there, which is why the run ships it.
 
 The log rules (docs/ui.md, "Adding the screens"):
   * no `Compile script error:` for the window's states or the case;
-  * `TXStateMachine.IndexOfState(ShowQmManager|EventQmManager)` exactly once
-    per return from a battle, and never otherwise - the only lookup that can
-    miss is the one right after a map load;
+  * `TXStateMachine.IndexOfState(ShowQmManager|EventQmManager)` never (until
+    0.1.3 once per return from a battle: the check looked the name up). The
+    check now reads the name at the index it remembered, so a return from a
+    battle costs no ERROR line at all: no `ERROR|` line may stand between
+    that DoCreate's `...DoCreate started...` and its `screens gone` line,
+    whatever it says (the engine answers
+    silently for an index past the end: run g17b1, 2026-10-05; docs/ui.md,
+    "Adding the screens");
+  * one `screens gone` line per return from a battle, never otherwise;
   * both screen states added 1 + N times, and the last `ready=1 adds=` = 1 + N;
   * at least one `screens present` line: a DoCreate without a map load found
     them silently;
@@ -275,15 +281,29 @@ def log_problems(lines, battles=0, closes=0, run_a=False):
     shows = [int(SHOW.search(ln).group(1)) for ln in lines if SHOW.search(ln)]
     closed = [int(CLOSES.search(ln).group(1)) for ln in lines if CLOSES.search(ln)]
     present = sum("[qm] ui ensure: screens present" in ln for ln in lines)
+    gone = [k for k, ln in enumerate(lines) if "[qm] ui ensure: screens gone" in ln]
+    # Every ERROR line of that DoCreate before `screens gone`: from the last
+    # `...DoCreate started...` line before it (or the log's start).
+    gone_errors = []
+    for k in gone:
+        top = next((t for t in range(k - 1, -1, -1) if "...DoCreate started..." in lines[t]), -1)
+        gone_errors += [ln for ln in lines[top + 1:k] if ln.startswith("ERROR")]
     facts.update(compile_errors=len(compile_errors), missed_lookups=len(missed),
+                 gone=len(gone), gone_errors=len(gone_errors),
                  added=added, shows=len(shows), closes=max(closed or [0]),
                  present_checks=present,
                  last_ready=ready[-1].group(0) if ready else None)
     if compile_errors:
         problems.append("compile errors: %s" % compile_errors)
-    if len(missed) != battles:
-        problems.append("%d IndexOfState lines for the window's states, expected %d: %s"
-                        % (len(missed), battles, missed))
+    if missed:
+        problems.append("%d IndexOfState lines for the window's states, expected none: %s"
+                        % (len(missed), missed))
+    if gone_errors:
+        problems.append("%d ERROR lines in the DoCreate before a 'screens gone' line, expected none: %s"
+                        % (len(gone_errors), gone_errors))
+    if len(gone) != battles:
+        problems.append("%d 'screens gone' lines, expected %d (one per return from a battle)"
+                        % (len(gone), battles))
     for name in WINDOW_STATES:
         if added.get(name, 0) != 1 + battles:
             problems.append("%s added %d times, expected %d" % (name, added.get(name, 0),

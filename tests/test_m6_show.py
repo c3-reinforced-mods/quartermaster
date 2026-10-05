@@ -724,12 +724,18 @@ UI_DIR = PAS5.QM + b"\\data\\quartermaster\\ui\\"
 class Machine(PAS5.Engine):
     """The GUI state machine as qmUiEnsure sees it: states by name, their code
     lines, and the engine's ERROR line for every lookup of a missing name
-    (TXStateMachine.IndexOfState, capability probe 10)."""
+    (TXStateMachine.IndexOfState, capability probe 10). `past_end` is what
+    the engine answers for an index past the end of the list when it is read
+    by index: silent and empty (run g17b1, 2026-10-05, docs/ui.md); a test
+    below shows what the check and the log rule do should an engine log
+    there instead."""
 
     def __init__(self, files):
         PAS5.Engine.__init__(self, files)
         self.machine = {}                       # name -> code lines
         self.gamemode = MAINMENU
+        self.past_end = b""
+        self.past_end_logs = False
 
     def n_qmxgintgamemode(self):
         return self.gamemode
@@ -742,13 +748,21 @@ class Machine(PAS5.Engine):
 
     def n_StateMachineGetStateIndByName(self, sm, name):
         names = list(self.machine)
+        if name in getattr(self, "blind_once", set()):
+            self.blind_once.discard(name)
+            return -1
         if name not in names:
             self.log.append(b"ERROR| 9 |error (): TXStateMachine.IndexOfState(" + name + b")")
             return -1
         return 140 + names.index(name)
 
     def n_StateMachineGetStateNameByInd(self, sm, ind):
-        return list(self.machine)[ind - 140]
+        names = list(self.machine)
+        if 0 <= ind - 140 < len(names):
+            return names[ind - 140]
+        if self.past_end_logs:
+            self.log.append(b"ERROR| 9 |error (): TXStateMachine.GetStateName(%d)" % ind)
+        return self.past_end
 
     def n_SameText(self, a, b):
         return a.lower() == b.lower()
@@ -791,13 +805,22 @@ def test_the_first_main_menu_adds_both_screens_with_their_code():
     assert (eng.key(b"qm_ui", b"ready"), eng.key(b"qm_ui", b"adds")) == (b"1", b"1")
     assert eng.log[-1] == b"[qm] ui ensure: ready=1 adds=1 from " + UI_DIR
     assert not [l for l in eng.log if l.startswith(b"ERROR")]       # no lookup at all
-    # The next DoCreate in the menu: one lookup of a present name, silent.
+    # The next DoCreate in the menu: one read of the name at the remembered
+    # index, silent.
     ensure(eng)
     assert eng.log[-1] == b"[qm] ui ensure: screens present checks=1 adds=1"
     assert not [l for l in eng.log if l.startswith(b"ERROR")]
 
 
-def test_a_map_load_drops_the_screens_and_they_come_back_after_one_error_line():
+def test_the_check_remembers_where_it_added_the_window():
+    eng = Machine(screen_files())
+    ensure(eng)
+    assert eng.key(b"qm_ui", b"showidx") == b"140"            # ShowQmManager is first
+    assert b"[qm] ui ensure: added ShowQmManager lines=" in b"\n".join(eng.log)
+    assert b"index=140" in b"\n".join(eng.log)
+
+
+def test_a_map_load_drops_the_screens_and_they_come_back_without_an_error_line():
     eng = Machine(screen_files())
     ensure(eng)
     eng.machine = {}                     # a battle reloaded the GUI machine from menu.aix
@@ -807,12 +830,72 @@ def test_a_map_load_drops_the_screens_and_they_come_back_after_one_error_line():
     assert len(eng.log) == n and eng.machine == {}
     eng.gamemode = MAINMENU
     ensure(eng)
-    assert [l for l in eng.log if l.startswith(b"ERROR")] == [
-        b"ERROR| 9 |error (): TXStateMachine.IndexOfState(ShowQmManager)"]
+    assert not [l for l in eng.log if l.startswith(b"ERROR")]       # no lookup by name
     assert b"[qm] ui ensure: screens gone (a map load reloaded the GUI machine); adding them " \
         b"again" in eng.log
     assert set(eng.machine) == {b"ShowQmManager", b"EventQmManager"}
     assert eng.key(b"qm_ui", b"adds") == b"2" and eng.key(b"qm_ui", b"checks") == b"1"
+    ensure(eng)                          # and the second life of the screens checks the same way
+    assert eng.log[-1] == b"[qm] ui ensure: screens present checks=2 adds=2"
+
+
+def test_a_state_whose_index_the_engine_did_not_give_is_never_added_twice():
+    """Review fix (0.1.4): should the lookup right after the add miss, the
+    state is in all the same - it counts as added, and the check falls back to
+    the lookup by name of 0.1.3 (silent while present, one ERROR when gone)."""
+    eng = Machine(screen_files())
+    eng.blind_once = {b"ShowQmManager"}
+    ensure(eng)
+    assert (eng.key(b"qm_ui", b"show"), eng.key(b"qm_ui", b"showidx")) == (b"1", b"-1")
+    assert eng.key(b"qm_ui", b"ready") == b"1"
+    ensure(eng)                                       # present: found by name, silently
+    assert eng.log[-1] == b"[qm] ui ensure: screens present checks=1 adds=1"
+    assert not [l for l in eng.log if l.startswith(b"ERROR")]
+    eng.machine = {}
+    eng.gamemode = 2
+    ensure(eng)
+    eng.gamemode = MAINMENU
+    ensure(eng)                                       # gone: one ERROR, then added once
+    assert [l for l in eng.log if l.startswith(b"ERROR")] == [
+        b"ERROR| 9 |error (): TXStateMachine.IndexOfState(ShowQmManager)"]
+    assert set(eng.machine) == {b"ShowQmManager", b"EventQmManager"}
+    assert eng.key(b"qm_ui", b"showidx") == b"140"
+
+
+def test_another_state_at_the_remembered_index_counts_as_gone():
+    """After a reload another mod may have added a state at that index: the
+    name differs, so the window's states are added again, not trusted."""
+    eng = Machine(screen_files())
+    ensure(eng)
+    eng.machine = {b"SomeoneElsesState": []}       # reloaded; a mod's state sits at index 140
+    eng.gamemode = 2
+    ensure(eng)
+    eng.gamemode = MAINMENU
+    ensure(eng)
+    assert b"[qm] ui ensure: screens gone (a map load reloaded the GUI machine); adding them " \
+        b"again" in eng.log
+    assert set(eng.machine) == {b"SomeoneElsesState", b"ShowQmManager", b"EventQmManager"}
+    assert eng.key(b"qm_ui", b"showidx") == b"141"
+
+
+def test_if_the_engine_logs_for_an_index_past_the_end_the_error_is_what_the_run_catches():
+    """Not what the game does (it is silent there): should an engine log for
+    that index, the check still works - the states come back - and the log
+    rule of tools/m6cases.py fails on the ERROR line before `screens gone`."""
+    eng = Machine(screen_files())
+    eng.past_end_logs = True
+    ensure(eng)
+    eng.machine = {}
+    eng.gamemode = 2
+    ensure(eng)
+    eng.gamemode = MAINMENU
+    ensure(eng)
+    assert set(eng.machine) == {b"ShowQmManager", b"EventQmManager"}
+    errors = [l for l in eng.log if l.startswith(b"ERROR")]
+    assert errors == [b"ERROR| 9 |error (): TXStateMachine.GetStateName(140)"]
+    import m6cases
+    problems = m6cases.log_problems([l.decode("latin-1") for l in eng.log], battles=1)[0]
+    assert any("in the DoCreate before a 'screens gone'" in p for p in problems)
 
 
 def test_a_screen_without_its_file_is_added_once_its_file_is_there():
