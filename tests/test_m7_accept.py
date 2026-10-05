@@ -58,10 +58,13 @@ def test_the_plan_lists_every_scenario_in_order_with_its_check():
                         "i7": 3, "i8": 1, "i9": 2, "order": 2, "saved": 3}
 
 
-def test_the_vanilla_run_waits_for_its_timeout_without_quartermaster():
+def test_the_vanilla_run_ends_on_the_last_line_of_the_games_log():
+    # Until 2026-10-05 it waited out a 90 s timeout; the log is complete after
+    # ~5 s, ending with Steam's achievement callback.
     s = A.by_name("vanilla", expect_broken=[]).s
     cmd = m5cases.command(s, "C", "L", prefix="m7")
-    assert "--no-quartermaster" in cmd and "--until" not in cmd and "--timeout 90" in cmd
+    assert "--no-quartermaster" in cmd and '--until "SteamwrapGetNumAchievements"' in cmd
+    assert "--timeout 60" in cmd
 
 
 def test_every_planned_command_parses_as_hrun_options():
@@ -443,14 +446,19 @@ def test_the_vanilla_rules_want_the_menu_and_the_swfp_comparison(tmp_path):
     assert len(A._vanilla_rules(str(tmp_path), None)) == 2
 
 
-def test_a_run_without_quartermaster_that_timed_out_is_complete(tmp_path):
-    (tmp_path / "0.cos_1.log").write_bytes(b"LOG| 7 |...DoCreate started...\r\n"
-                                          b"TIM| 8 |...InitMap finished...\r\n" * 2)
-    (tmp_path / "summary.json").write_text(json.dumps(
-        {"state": "timeout", "restarts": 0, "brick_suspected": False,
-         "sweep": {"ok": True, "problems": [],
-                   "mods_trees_checked": {"SW_Frontline_Protocol": 1}}}))
+def test_a_run_without_quartermaster_that_reached_its_last_line_is_complete(tmp_path):
+    (tmp_path / "0.cos_1.log").write_bytes(
+        b"LOG| 7 |...DoCreate started...\r\nTIM| 8 |...InitMap finished...\r\n" * 2
+        + b"LOG| 15 | :: STEAM CALLBACK :: SteamwrapGetNumAchievements()=103\r\n")
+    summary = {"state": "reached", "restarts": 0, "brick_suspected": False,
+               "sweep": {"ok": True, "problems": [],
+                         "mods_trees_checked": {"SW_Frontline_Protocol": 1}}}
+    (tmp_path / "summary.json").write_text(json.dumps(summary))
     said = []
     assert A.main(["check", str(tmp_path), "--scenario", "vanilla"], echo=said.append) == 0, said
+    # Since 2026-10-05 a timeout is no longer the expected end.
+    (tmp_path / "summary.json").write_text(json.dumps(dict(summary, state="timeout")))
+    assert A.main(["check", str(tmp_path), "--scenario", "vanilla"], echo=lambda s: None) == 1
+    (tmp_path / "summary.json").write_text(json.dumps(summary))
     (tmp_path / "0.cos_1.log").write_bytes(b"LOG| 9 |[qm] boot version 0.0.0 hook=x\r\n")
     assert A.main(["check", str(tmp_path), "--scenario", "vanilla"], echo=lambda s: None) == 1

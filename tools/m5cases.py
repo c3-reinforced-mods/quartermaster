@@ -471,8 +471,9 @@ def check_run(run_dir, s):
     logs = run_logs(run_dir)
     facts.update(state=summary.get("state"), restarts=summary.get("restarts"),
                  logs=[n for n, _l in logs], sweep=summary.get("sweep", {}).get("ok"))
-    # A run with no marker to wait for (the game without Quartermaster) ends
-    # at its timeout, which is then the expected end.
+    # A run with no marker to wait for ends at its timeout, which is then the
+    # expected end (the game without Quartermaster did until 2026-10-05; it now
+    # ends on the last line of its log, tools/m7accept.py VANILLA_LAST).
     want_state = "reached" if s.until else "timeout"
     if summary.get("state") != want_state:
         problems.append("the run ended %r, not %s" % (

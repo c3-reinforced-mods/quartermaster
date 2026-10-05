@@ -15,6 +15,9 @@ import hbuild
 import hrun
 from ref import order
 
+#: The real process listing, kept before the autouse fixture below replaces it.
+REAL_RUNNING_IMAGES = hbuild.running_images
+
 # Every byte a text-mode round trip would change: a tab, a trailing space, a bare
 # LF, a lone CR, bytes above 127 (0x81 does not even decode as cp1252), and no
 # final CRLF. Only a binary copy restores this.
@@ -447,6 +450,101 @@ def test_the_wait_ends_when_the_game_is_gone(w):
     code, summary = hrun.run(options(w, quartermaster=False), game, lambda *_: None)
     assert summary["state"] == "game exited" and summary["elapsed_s"] < 120
     assert code == 0 and not summary["brick_suspected"]
+
+
+# ------------------------------------------------------------ speed (2026-10-05)
+STUCK = [["LOG|  6 |...DoCreate started...",
+          "ERROR| 33 |CompileFramework() - compile global script error: Syntax error"]]
+
+
+def test_a_stalled_game_ends_the_wait_soon_after_its_last_log_line(w):
+    """The engine's compile-error box waits for a click: alive, logging nothing."""
+    game = FakeGame(w, STUCK)
+    code, summary = hrun.run(options(w, follow_bricks=True, stall=90.0, timeout=420.0), game,
+                             lambda *_: None)
+    assert summary["state"] == "stalled" and 90 <= summary["elapsed_s"] <= 95
+    assert game.killed and summary["sweep"]["ok"] and code == 1
+
+
+def test_without_stall_the_same_game_waits_out_its_timeout(w):
+    code, summary = hrun.run(options(w, follow_bricks=True, timeout=200.0), FakeGame(w, STUCK),
+                             lambda *_: None)
+    assert summary["state"] == "timeout" and summary["elapsed_s"] >= 200
+
+
+def test_stall_never_fires_without_a_brick_line(w):
+    lives = [["LOG|  7 |...DoCreate started...", "LOG|  9 |[qm] booted gen=1"]]
+    code, summary = hrun.run(options(w, stall=10.0, timeout=60.0, until="never"),
+                             FakeGame(w, lives), lambda *_: None)
+    assert summary["state"] == "timeout"
+
+
+def test_the_process_table_is_read_only_after_the_grace_or_for_a_stall(w):
+    reads = []
+    game = FakeGame(w, [["LOG| 1 |no marker"]])
+    real = game.running
+    game.running = lambda: reads.append(game.t) or real()
+    hrun.run(options(w, quartermaster=False, until="never", timeout=50.0, startup_grace=30.0),
+             game, lambda *_: None)
+    t0 = min(reads)
+    # The preflight and the kill read it too; the wait's own reads start after the grace.
+    waits = [t for t in reads if 1000.0 < t < 1000.0 + 50.0]
+    assert waits and min(waits) > 1000.0 + 30.0 - 0.01, (t0, waits[:3])
+
+
+def test_the_default_poll_is_half_a_second():
+    assert hrun.Options().poll == 0.5 and hrun.Options().stall == 0.0
+
+
+def test_the_kill_looks_every_fifth_of_a_second(w):
+    sleeps = []
+
+    class Lingers(FakeGame):
+        def kill(self, image):
+            self.killed.append(image)          # the process takes a moment to go
+
+        def sleep(self, seconds):
+            sleeps.append(seconds)
+            FakeGame.sleep(self, seconds)
+            if len([s for s in sleeps if s == 0.2]) >= 3:
+                self.alive = False
+
+    lives = [["LOG|  7 |...DoCreate started...", "LOG|  9 |[qm] booted gen=1"]]
+    hrun.run(options(w), Lingers(w, lives), lambda *_: None)
+    # After the marker: the settle (1 s here), then the kill's checks at 0.2 s.
+    assert sleeps[-4:] == [1.0, 0.2, 0.2, 0.2]
+
+
+def test_each_lifes_project_load_is_in_the_summary_and_a_slow_one_is_warned(w):
+    lives = [["TIMER|  0 |[00:00:703] TOTAL[00:00:703] LoadFromStreamProject start",
+              "TIMER|  5 |[00:01:617] TOTAL[00:02:321] LoadFromStreamProject end"],
+             ["TIMER|  5 |[00:26:900] TOTAL[00:27:500] LoadFromStreamProject end",
+              "LOG|  7 |...DoCreate started...", "LOG|  9 |[qm] booted gen=1"]]
+    said = []
+    code, summary = hrun.run(options(w), FakeGame(w, lives), said.append)
+    assert summary["project_load_s"] == [2.321, 27.5]
+    assert [s for s in said if s.startswith("WARN: life 2 took 27.5 s")]
+    assert not [s for s in said if s.startswith("WARN: life 1")]
+    assert hrun.project_loads([os.path.join(w.root, "missing.log")]) == [None]
+
+
+def test_the_process_list_comes_from_a_snapshot_and_agrees_with_tasklist(monkeypatch):
+    """The real process table (read only): the snapshot and tasklist list this
+    very interpreter; running_images falls back to tasklist when the snapshot
+    fails, and fails closed when both do."""
+    import sys
+    me = os.path.basename(sys.executable).lower()
+    assert me in hbuild._toolhelp_images() and me in hbuild._tasklist_images()
+    assert me in REAL_RUNNING_IMAGES()
+
+    def fails(*_a):
+        raise OSError("no listing")
+
+    monkeypatch.setattr(hbuild, "_toolhelp_images", fails)
+    assert me in REAL_RUNNING_IMAGES()                 # tasklist stands in
+    monkeypatch.setattr(hbuild, "_tasklist_images", fails)
+    with pytest.raises(hbuild.BuildError):
+        REAL_RUNNING_IMAGES()
 
 
 # ------------------------------------------------------------ crash, recover

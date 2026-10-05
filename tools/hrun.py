@@ -27,6 +27,11 @@ Options:
                             summary still reports the brick lines
     --hold S                keep the game running S seconds after TEXT appeared (a
                             helper captures the screen meanwhile)
+    --stall S               with --follow-bricks: end the wait as `stalled` once a
+                            brick line was seen, the game still runs and no new log
+                            has grown for S seconds (the engine's "Error compiling
+                            scripts" box waits for a click that never comes); S of
+                            90 or more - the slowest project load seen took 57 s
     --qm-folder NAME        deploy dist\Quartermaster as mods\NAME: Quartermaster
                             (default) or QMTest<name>, for a machine whose player
                             keeps an installation in mods\Quartermaster
@@ -247,7 +252,10 @@ class Options:
     game_created: list = field(default_factory=list)
     run_id: str = None
     dry_run: bool = False
-    poll: float = 2.0
+    # Until 2026-10-05 2.0 s, one tasklist call (0.42 s) each round: a marker
+    # was seen 1.2 s late on average (measured over the runs of that day).
+    poll: float = 0.5
+    stall: float = 0.0
     settle: float = 3.0
     startup_grace: float = 60.0
     exit_grace: float = 20.0
@@ -798,18 +806,67 @@ def scan_logs(paths, opts):
     return found
 
 
+#: The engine's line at the end of the project load (scripts compiled, the
+#: guard included): `TIMER|  5 |[00:01:617] TOTAL[00:02:321] LoadFromStreamProject end`.
+PROJECT_END = b"LoadFromStreamProject end"
+#: A life whose project took longer marks a slow window: a fast life takes
+#: ~2.3 s (633 lives), slow ones 6-57 s with the same mods an hour apart, cause
+#: unknown (measured 2026-10-05).
+SLOW_LOAD_S = 6.0
+
+
+def project_loads(paths):
+    """Seconds from each life's start to the end of its project load (the
+    TOTAL of its PROJECT_END line), one per log in order; None without one."""
+    out = []
+    for path in paths:
+        value = None
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            data = b""
+        for raw in data.split(b"\n"):
+            if PROJECT_END in raw and b"TOTAL[" in raw:
+                stamp = raw.split(b"TOTAL[", 1)[1].split(b"]", 1)[0]
+                try:
+                    m, s, ms = (int(x) for x in stamp.split(b":"))
+                    value = round(m * 60 + s + ms / 1000.0, 3)
+                except ValueError:
+                    value = None
+                break
+        out.append(value)
+    return out
+
+
+def _logs_size(paths):
+    total = 0
+    for p in paths:
+        try:
+            total += os.path.getsize(p)
+        except OSError:
+            pass
+    return total
+
+
 def wait_for_game(opts, system, before, t0, out):
-    """Poll until the marker, a brick line, the timeout or the game's exit."""
+    """Poll until the marker, a brick line, the timeout, the game's exit - or,
+    with `stall`, a game that stays up after a brick line and logs nothing
+    more (the engine's compile-error box waiting for a click)."""
     state = "timeout"
     gone_since = None
     seen = {}
     found = scan_logs([], opts)
+    grown_at, last_size = system.now(), -1
     while system.now() - t0 < opts.timeout:
         system.sleep(opts.poll)
         new = [p for p in game_logs(opts.save_dir) if p not in before]
         found = scan_logs(new, opts)
         for key in found["qm"]:
             seen.setdefault(key, round(system.now() - t0, 1))
+        size = _logs_size(new)
+        if size != last_size:
+            grown_at, last_size = system.now(), size
         if found["brick"] and not opts.follow_bricks:
             state = "brick"
             system.sleep(opts.settle)
@@ -818,7 +875,15 @@ def wait_for_game(opts, system, before, t0, out):
             state = "reached"
             system.sleep(opts.settle)
             break
+        stalling = opts.stall > 0 and found["brick"] and system.now() - grown_at >= opts.stall
+        # The process table is read only when an answer is needed: after the
+        # start-up grace (has the game gone?) or for a stall.
+        if not stalling and system.now() - t0 <= opts.startup_grace:
+            continue
         alive = set(GAME_IMAGES) & system.running()
+        if alive and stalling:
+            state = "stalled"
+            break
         if alive:
             gone_since = None
         elif system.now() - t0 > opts.startup_grace:
@@ -1035,10 +1100,12 @@ def _kill_game(journal, system, out):
     images = ["cossacks.exe"] + (["modman.exe"] if journal["launched"] == "modman.exe" else [])
     for image in images:
         system.kill(image)
-    for _ in range(10):
+    # Up to 10 s for the processes to go, looked at every 0.2 s (until
+    # 2026-10-05 every 1 s, ~1 s lost per run).
+    for _ in range(50):
         if not (set(images) & system.running()):
             break
-        system.sleep(1)
+        system.sleep(0.2)
     out("kill: %s" % ", ".join(images))
 
 
@@ -1081,6 +1148,11 @@ def finish(journal, system, opts, waited, error, out):
         out("  " + p)
 
     found = (waited or {}).get("found") or {"boot": False, "brick": [], "qm": [], "until": False}
+    loads = project_loads(copied)
+    for k, s in enumerate(loads, 1):
+        if s is not None and s > SLOW_LOAD_S:
+            out("WARN: life %d took %.1f s to load its scripts (a fast life ~2.3 s): a slow "
+                "window, this run's times do not compare" % (k, s))
     brick_reasons = [line for _log, line in found["brick"]]
     if journal["quartermaster"] and waited and not found["boot"]:
         brick_reasons.append("no %r line before the wait ended" % opts.boot_marker)
@@ -1092,6 +1164,7 @@ def finish(journal, system, opts, waited, error, out):
         "until": opts.until,
         "until_log": opts.until_log,
         "logs": copied,
+        "project_load_s": loads,
         "restarts": max(0, len(copied) - 1),
         "boot_seen": found["boot"],
         "qm_first_seen": (waited or {}).get("qm_first_seen", []),
@@ -1336,6 +1409,7 @@ def parse_args(argv):
                    dest="expect_compile_errors")
     p.add_argument("--follow-bricks", action="store_true")
     p.add_argument("--hold", type=float, default=0.0)
+    p.add_argument("--stall", type=float, default=0.0)
     p.add_argument("--enable", action="append", default=[])
     p.add_argument("--unlisted", action="append", default=[])
     p.add_argument("--compose", action="store_true")

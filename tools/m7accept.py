@@ -116,6 +116,8 @@ OUT, LOGS = m5cases.OUT, m5cases.LOGS
 PREFIX = "m7"
 TICK_START = m5cases.TICK_START
 CONFIRMED = m5cases.CONFIRMED
+#: The last line of the game's start-up log without Quartermaster (see vanilla).
+VANILLA_LAST = "SteamwrapGetNumAchievements"
 QM_COPY = m6cases.QM_COPY
 CAMERA = b"gui\\menu.inc\\cameracontrol.inc"
 BROKEN_PATH = b"gui\\menu.inc\\registershortcuts.inc"
@@ -158,9 +160,13 @@ def scenarios(out=OUT, logs=LOGS, expect_broken=None):
     first = ["why=first", "[qm] guard restart=True kind=auto why=outputs-changed",
              "[qm] restart now kind=auto"]
     stable = ["why=stable", "[qm] boot stable", CONFIRMED, TICK_START, "![qm] restart now"]
+    # The game alone ends its start-up log with Steam's achievement callback,
+    # after both InitMap lines: the 16th and last line of 11 of 11 complete
+    # vanilla logs (m7vanilla, m12*vanilla). Until 2026-10-05 the run waited
+    # out its 90 s timeout, ~78 s of an m12 pass, with nothing more to log.
     vanilla = m5cases.Scenario(
         "vanilla", "the game without Quartermaster: no [qm] line, SWFP untouched",
-        quartermaster=False, until="", timeout=90, restarts=0,
+        quartermaster=False, until=VANILLA_LAST, timeout=60, restarts=0,
         lives=[["!" + "[qm]", "InitMap finished"]])
     i2 = m5cases.Scenario(
         "i2", "WASD + CamSpeed: both merged, both markers after the restart",
