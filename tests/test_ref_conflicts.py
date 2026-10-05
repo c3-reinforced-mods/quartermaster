@@ -8,6 +8,7 @@ import pytest
 import hbuild as H
 import m4cases as C
 from conftest import GAME_DIR, vanilla_bytes
+from ref import about as AB
 from ref import conflicts as CF
 from ref import report as RP
 from ref import validate as V
@@ -249,6 +250,12 @@ def test_the_real_set_mgraphics_unofficial_patch_renaissance(game_dir, entries):
                  os.path.join(GAME_DIR, "mods", "UnofficialPatch"))
         if not os.path.isdir(where):
             pytest.skip("not installed: %s" % where)
+        about = os.path.join(where, "about.cfg")
+        if not ws and os.path.isfile(about):
+            with open(about, "rb") as fh:
+                if AB.parse(fh.read()).id == b"reinforcedcore":
+                    pytest.skip("mods\\UnofficialPatch is Reinforced Core now (2026-10-05, "
+                                "more files); the numbers below are of the earlier patch")
 
     def compiles(cand):
         if cand.path == SHOWMAINMENU and cand.tier == b"merged":
