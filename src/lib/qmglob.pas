@@ -53,6 +53,39 @@ begin
    end;
 end;
 
+//! qmGlobRelated: whether the mods with dirs `qmGrA` and `qmGrB` are an add-on
+//! and its base - one's about.cfg `extends` names the other by a name it
+//! answers to (qm_about ext<i>, nm<i>; ref/about.py _related, ref/guard.py
+//! related). Such a pair is no clash (0.1.4): the start-up guard lets it start
+//! together, so the boot, the window and the Apply do not call it one. False
+//! when qm_about is not there or a dir is not in it. Callers ask only for a
+//! pair that ships a file both ways, so the row scan stays rare.
+function qmGlobRelated(const qmGrA : String; const qmGrB : String) : Boolean;
+begin
+   Result := False;
+   var qmGrP : Integer = ParserSelectByKey('qm_about');
+   if (qmGrP=0) then
+   exit;
+   var qmGrI : Integer = -1;
+   var qmGrJ : Integer = -1;
+   var qmGrK : Integer;
+   for qmGrK:=0 to ParserGetIntValueByKeyByHandle(qmGrP, 'n')-1 do
+   begin
+      if (qmGrI<0) and SameText(ParserGetValueByKeyByHandle(qmGrP, 'dir'+IntToStr(qmGrK)), qmGrA) then
+      qmGrI := qmGrK;
+      if (qmGrJ<0) and SameText(ParserGetValueByKeyByHandle(qmGrP, 'dir'+IntToStr(qmGrK)), qmGrB) then
+      qmGrJ := qmGrK;
+   end;
+   if (qmGrI<0) or (qmGrJ<0) then
+   exit;
+   var qmGrEa : String = ParserGetValueByKeyByHandle(qmGrP, 'ext'+IntToStr(qmGrI));
+   var qmGrEb : String = ParserGetValueByKeyByHandle(qmGrP, 'ext'+IntToStr(qmGrJ));
+   if (qmGrEa<>'') and (StrPos('|'+qmGrEa+'|', ParserGetValueByKeyByHandle(qmGrP, 'nm'+IntToStr(qmGrJ)))>0) then
+   Result := True;
+   if (qmGrEb<>'') and (StrPos('|'+qmGrEb+'|', ParserGetValueByKeyByHandle(qmGrP, 'nm'+IntToStr(qmGrI)))>0) then
+   Result := True;
+end;
+
 //! qmGlobPath: a folded name as the player reads it: `lib\unit.script` is
 //! scripts\lib\unit.script, `dmscript.global` scripts\dmscript.global.
 procedure qmGlobPath(const qmGpF : String; var qmGpOut : String);

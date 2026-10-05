@@ -1247,6 +1247,10 @@ for qmUaB:=qmUaA+1 to qmUaN-1 do
 if (qmUaB<>qmUaSelf) and (ParserGetIntValueByKeyByHandle(qmUaUi, 'pe'+IntToStr(qmUaB))=1) and (StrLength(ParserGetValueByKeyByHandle(qmUaUi, 'gl'+IntToStr(qmUaB)))>1) and (qmUaPn<qmUaConfMax) then
 begin
    qmGlobFirst(ParserGetValueByKeyByHandle(qmUaUi, 'gl'+IntToStr(qmUaA)), ParserGetValueByKeyByHandle(qmUaUi, 'gl'+IntToStr(qmUaB)), qmUaF);
+   // An add-on and the mod it extends are no clash (0.1.4, qmGlobRelated).
+   if (qmUaF<>'') then
+   if qmGlobRelated(ParserGetValueByKeyByHandle(qmUaUi, 'dir'+IntToStr(qmUaA)), ParserGetValueByKeyByHandle(qmUaUi, 'dir'+IntToStr(qmUaB))) then
+   qmUaF := '';
    if (qmUaF<>'') then
    begin
       qmGlobPath(qmUaF, qmUaP);

@@ -68,6 +68,15 @@ class Engine(M5.Engine):
             mods.children.append(e.handle)
         self.nodes[h].ini = mods.handle
 
+    def n_SameText(self, a, b):
+        # Equal but for ASCII case (as tests/test_m5_loadorder.py has it).
+        return O.ascii_lower(a) == O.ascii_lower(b)
+
+    def n_OpenFileRead(self, path):
+        # Every file the guard opens, for the tests that count its reads.
+        self.opened = getattr(self, "opened", []) + [path]
+        return M5.Engine.n_OpenFileRead(self, path)
+
     def n_SteamSyncWorkshopItems(self, h):
         rows = [dict(self.nodes[c].keys) for c in self.nodes[self.nodes[h].ini].children]
         self.synced.append([(r[b"dir"], r[b"dis"]) for r in rows])
@@ -76,9 +85,11 @@ class Engine(M5.Engine):
 
 class Mod(object):
     def __init__(self, dir, on=True, title=b"", core=False, libs=(), glob=False, src=False,
-                 hooks=(), tag=b"0"):
+                 hooks=(), tag=b"0", about=None):
         self.dir, self.on, self.title, self.core = dir, on, title, core
         self.libs, self.glob, self.src, self.hooks, self.tag = list(libs), glob, src, list(hooks), tag
+        # The bytes of its about.cfg (None: it ships none).
+        self.about = about
 
 
 class Start(object):
@@ -86,8 +97,11 @@ class Start(object):
 
     def __init__(self, mods, known=None, register7=b"", restore_file=False, age=AGE,
                  previous=None, compile_prev=None, ini=True, steam=True, game=VANILLA,
-                 compiled=None, logs=(), chosen=None):
+                 compiled=None, logs=(), chosen=None, qm_known=None):
         self.mods, self.known, self.register7 = mods, known, register7
+        # Quartermaster's own data\quartermaster\known\<number>.cfg files:
+        # {Workshop number: bytes}.
+        self.qm_known = qm_known or {}
         self.restore_file, self.age, self.previous = restore_file, age, previous
         self.compile_prev, self.ini, self.steam = compile_prev, ini, steam
         # The installed resource.script (None: not there at all).
@@ -133,6 +147,10 @@ def files_of(s):
             files[data + b"scripts\\dmscript.source"] = b"x"
         for h in m.hooks:
             files[data + h] = b"x"
+        if m.about is not None:
+            files[m.dir + b"\\about.cfg"] = m.about
+    for number, data in s.qm_known.items():
+        files[QM + b"\\data\\quartermaster\\known\\" + number + b".cfg"] = data
     if s.known is not None:
         files[QSAVE + b"known.cfg"] = B.render_known(s.known)
     if s.previous is not None:
@@ -173,10 +191,22 @@ def run_guard(s):
     return eng
 
 
+def about_bytes(s, m):
+    """What the guard reads for `m` (ref/guard.py GMod `about`): its about.cfg,
+    else for a Workshop mod Quartermaster's known\\<number>.cfg - when an
+    enabled Quartermaster is in the list (its folder is QM here)."""
+    if m.about is not None:
+        return m.about
+    if not any(x.on and x.core for x in s.mods):
+        return None
+    origin, ident = O.identity(m.dir)
+    return s.qm_known.get(ident) if origin == O.WORKSHOP else None
+
+
 def twin(s):
     gm = [G.GMod(m.dir, m.title, m.on, m.core,
                  G.global_names(m.libs, m.glob, m.src),
-                 next((h for h in G.HOOK_ORDER if h in m.hooks), b""))
+                 next((h for h in G.HOOK_ORDER if h in m.hooks), b""), about_bytes(s, m))
           for m in s.mods]
     previous = dict(s.previous) if s.previous is not None else None
     same = s.game is not None and G.game_stamp(s.game) == G.game_stamp(VANILLA)
@@ -556,6 +586,37 @@ def test_the_boots_clashes_are_the_twins_pairs():
                 len(pairs), sum(1 for m in mods if m.on)) in eng.log
 
 
+def run_about_globals(s):
+    """qmAbout, then qmGlobals, as the boot runs them: the clash pairs can see
+    about.cfg's `extends` (qmGlobRelated)."""
+    files, ages = files_of(s)
+    eng = Engine(files, ages, mods=[(m.dir, m.on, m.tag) for m in s.mods])
+    eng.titles = dict((m.dir, m.title) for m in s.mods)
+    M5.load(eng, "qmAbout", "qmGlobals")
+    M5.run(eng, "qmAbout")
+    M5.run(eng, "qmGlobals")
+    return eng
+
+
+def test_the_boot_does_not_call_an_add_on_and_its_base_a_clash():
+    """0.1.4: the pair the guard lets start together is no clash line either;
+    a third mod with the same file still is one."""
+    third = Mod(W + b"4441110003", title=b"Third", libs=[b"unit.script"], tag=b"4441110003")
+    for mods, want in (([QMM, BASE, addon(b"extends = basemod\r\n")], []),
+                       ([QMM, BASE, addon(b"name = x\r\n")], [(1, 2, LIB_FILE)]),
+                       ([QMM, addon(b"extends = 2221110001\r\n"), BASE], []),
+                       ([QMM, BASE, addon(b"extends = basemod\r\n"), third],
+                        [(1, 3, LIB_FILE), (2, 3, LIB_FILE)])):
+        s = Start(mods)
+        eng = run_about_globals(s)
+        gm, _plan = twin(s)
+        assert G.conflict_pairs(gm) == want
+        key = functools.partial(eng.key, b"qm_glob")
+        assert key(b"cn") == b"%d" % len(want)
+        assert [(int(key(b"ca%d" % k)), int(key(b"cb%d" % k)), key(b"cf%d" % k))
+                for k in range(len(want))] == want
+
+
 def compiled_line(eng):
     """The end of qmGlobals' line: compiled=<n>, what became of compiled.cfg,
     pending=<what became of compile.cfg's pending>."""
@@ -733,3 +794,200 @@ def test_the_boot_reports_the_guard_moving_quartermaster_last():
     assert (key(b"gdmoved"), key(b"gdlate"), key(b"gdlatef")) == (
         b"1", LATE.dir, b"gui\\menu.inc\\doprogress.inc")
     assert (key(b"gdn"), key(b"gdnew")) == (b"0", b"0")
+
+
+# ------------------------------------------------------------------ extends
+# An add-on and its base may ship the same global script (ref/guard.py
+# `related`, docs/authoring.md `extends`): the mod that is not in compiled.cfg
+# is judged like a new subscription, but a claim by its base is no clash.
+BASE = Mod(W + b"2221110001", title=b"Base mod", libs=[b"unit.script"], tag=b"2221110001",
+           about=b"id = basemod\r\n")
+LIB_FILE = b"lib\\unit.script"
+
+
+def addon(about, dir=W + b"3331110002"):
+    return Mod(dir, title=b"Add-on", libs=[b"unit.script"], tag=b"3331110002", about=about)
+
+
+def judged(*mods, trusted=(QMM, BASE)):
+    """An ordinary start: the `trusted` mods are in compiled.cfg, the rest is judged."""
+    return Start([QMM] + list(mods), compiled=[m.dir for m in trusted])
+
+
+@pytest.mark.parametrize("about, related", [
+    (b"extends = basemod\r\n", True),
+    (b"extends=basemod\r\n", True),
+    (b"  Extends\t=\tBASEMOD \t \r\n", True),
+    (b"extends = 2221110001\r\n", True),                     # the Workshop number
+    (b"name = x\r\nextends = nobody\r\nextends = basemod", True),   # last line counts, no EOL
+    (b"extends = basemod\r\nextends = nobody\r\n", False),
+    (b"extends = nobody\r\n", False),
+    (b"# extends = basemod\r\n", False),
+    (b"extends basemod\r\n", False),                          # not key = value
+    (b"extends = base mod\r\n", False),                       # not a valid id
+    (b"extends = \r\n", False),
+    (b"\xef\xbb\xbfextends = basemod\r\n", True),             # a BOM on the first line
+    (b"\r\n\xef\xbb\xbfextends = basemod\r\n", False),        # ... only there
+    (b"name = x\x00extends = basemod\r\n", False),            # a zero byte ends the file
+    (b"extends = basemod\n", True),                           # line feed alone
+    (b"extends = basemod\rid = z", False),                    # the reader drops a lone CR
+    (b"extends = basemod\xc4\x85\r\n", False),                # a byte outside the table
+    (b"extends = basemod\r\nextends = BaseMod\r\n", True),
+    (b"", False),
+])
+def test_an_add_on_that_extends_its_base_is_not_switched_off(about, related):
+    s = judged(BASE, addon(about))
+    eng, plan = check(s)
+    assert plan.off == ([] if related else [(2, LIB_FILE, 1)]), plan
+    # The twin reads the file the same way the guard does.
+    assert (G.about_of(about)[1] != b"") or not related
+
+
+def test_the_same_pair_without_extends_is_a_clash_as_before():
+    eng, plan = check(judged(BASE, addon(b"name = Add-on\r\n")))
+    assert plan.why == b"conflict" and plan.off == [(2, LIB_FILE, 1)]
+    eng, plan = check(judged(BASE, addon(None)))
+    assert plan.off == [(2, LIB_FILE, 1)]
+
+
+def test_the_base_may_come_after_its_add_on_in_mods_ini():
+    # Neither is in compiled.cfg: the add-on claims first, the base is judged
+    # next - and is not switched off for a claim by its own add-on.
+    s = Start([QMM, addon(b"extends = basemod\r\n"), BASE], compiled=[QMM.dir])
+    eng, plan = check(s)
+    assert plan.off == []
+
+
+def test_the_base_may_name_the_add_on_instead():
+    base = Mod(BASE.dir, title=BASE.title, libs=[b"unit.script"], tag=BASE.tag,
+               about=b"extends = addonid\r\n")
+    s = Start([QMM, addon(b"id = addonid\r\n"), base], compiled=[QMM.dir])
+    eng, plan = check(s)
+    assert plan.off == []
+
+
+def test_a_mod_by_its_local_folder_name_is_found_too():
+    base = Mod(b"mods\\Base_Local", title=b"Base", libs=[b"unit.script"])
+    s = Start([QMM, base, addon(b"extends = base_local\r\n")], compiled=[QMM.dir, base.dir])
+    eng, plan = check(s)
+    assert plan.off == []
+    # ... and a Workshop folder that is not a number is no identity.
+    odd = Mod(W + b"abc", title=b"Odd", libs=[b"unit.script"])
+    eng, plan = check(Start([QMM, odd, addon(b"extends = abc\r\n")], compiled=[QMM.dir, odd.dir]))
+    assert [i for i, _f, _j in plan.off] == [2]
+
+
+def test_a_third_mod_with_the_same_file_is_still_switched_off_for_the_base():
+    third = Mod(W + b"4441110003", title=b"Third", libs=[b"unit.script"], tag=b"4441110003")
+    s = judged(BASE, addon(b"extends = basemod\r\n"), third)
+    eng, plan = check(s)
+    # The add-on stays; the third mod is told the claim is the base's, not the add-on's.
+    assert plan.off == [(3, LIB_FILE, 1)]
+    assert (b"[qm-guard] off " + third.dir + b" (lib\\unit.script, shipped by " + BASE.dir
+            + b")") in eng.log
+
+
+def test_the_mod_named_as_the_claimant_is_not_the_add_ons_own_base():
+    """Two mods of the last good start ship the file, the base first: the one
+    the note names is the claimant that is not the add-on's base."""
+    other = Mod(W + b"6661110005", title=b"Other", libs=[b"unit.script"], tag=b"6661110005")
+    s = Start([QMM, BASE, other, addon(b"extends = basemod\r\n")],
+              compiled=[QMM.dir, BASE.dir, other.dir])
+    eng, plan = check(s)
+    assert plan.off == [(3, LIB_FILE, 2)]
+    assert (b"[qm-guard] off " + W + b"3331110002 (lib\\unit.script, shipped by " + other.dir
+            + b")") in eng.log
+
+
+def test_two_add_ons_of_one_base_do_not_tolerate_each_other():
+    """Related is base and add-on, not two add-ons of one base: the second
+    add-on's claim is the first one's (a kept mod, not the base)."""
+    one = addon(b"extends = basemod\r\n")
+    two = Mod(W + b"7771110006", title=b"Add-on two", libs=[b"unit.script"], tag=b"7771110006",
+              about=b"extends = basemod\r\n")
+    s = Start([QMM, BASE, one, two], compiled=[QMM.dir])
+    eng, plan = check(s)
+    assert plan.off == [(3, LIB_FILE, 2)]
+
+
+def test_a_folder_name_with_a_space_is_a_name_but_extends_cannot_say_it():
+    """An extends that is not a valid id counts as none, even when a folder
+    answers to that very text."""
+    base = Mod(b"mods\\Base Mod", title=b"Base", libs=[b"unit.script"])
+    s = Start([QMM, base, addon(b"extends = base mod\r\n")], compiled=[QMM.dir, base.dir])
+    eng, plan = check(s)
+    assert [i for i, _f, _j in plan.off] == [2]
+
+
+def test_an_add_on_of_an_add_on_is_not_the_base_s_add_on():
+    """`extends` is not followed further: the second add-on names the first,
+    the base still claims the file and is no relation of it."""
+    one = addon(b"extends = basemod\r\nid = addonone\r\n")
+    two = Mod(W + b"5551110004", title=b"Add-on two", libs=[b"unit.script"], tag=b"5551110004",
+              about=b"extends = addonone\r\n")
+    eng, plan = check(judged(BASE, one, two))
+    assert plan.off == [(3, LIB_FILE, 1)]
+
+
+def test_an_add_on_whose_base_is_not_enabled_has_nothing_to_clash_with():
+    off_base = Mod(BASE.dir, on=False, title=BASE.title, libs=[b"unit.script"], tag=BASE.tag,
+                   about=BASE.about)
+    eng, plan = check(Start([QMM, off_base, addon(b"extends = basemod\r\n")],
+                            compiled=[QMM.dir]))
+    assert plan.off == []
+
+
+def test_quartermasters_known_entry_stands_in_for_a_missing_about_cfg():
+    """As the manager reads it (qmabout.pas): a Workshop mod without an
+    about.cfg of its own answers to Quartermaster's known\\<number>.cfg."""
+    bare = addon(None)                                    # Workshop 3331110002
+    entry = {b"3331110002": b"# Quartermaster's own list\r\nextends = basemod\r\n"}
+    eng, plan = check(Start([QMM, BASE, bare], compiled=[QMM.dir, BASE.dir], qm_known=entry))
+    assert plan.off == []
+    assert QM + b"\\data\\quartermaster\\known\\3331110002.cfg" in eng.opened
+    # The mod's own about.cfg wins over the entry.
+    own = addon(b"name = Add-on\r\n")
+    eng, plan = check(Start([QMM, BASE, own], compiled=[QMM.dir, BASE.dir], qm_known=entry))
+    assert plan.off == [(2, LIB_FILE, 1)]
+    # Without the entry the pair is a clash as before.
+    eng, plan = check(Start([QMM, BASE, bare], compiled=[QMM.dir, BASE.dir]))
+    assert plan.off == [(2, LIB_FILE, 1)]
+
+
+def test_a_mod_without_a_global_script_is_not_read_for_its_about_cfg():
+    """Review fix (0.1.4): only a mod that ships a global script can claim or
+    be judged, so the guard reads no other about.cfg - the log of opened files
+    shows it."""
+    plain = Mod(W + b"8881110007", title=b"No scripts", tag=b"8881110007",
+                about=b"extends = basemod\r\n")
+    s = Start([QMM, BASE, plain, addon(b"extends = basemod\r\n")], compiled=[QMM.dir, BASE.dir])
+    eng, plan = check(s)
+    assert plan.off == []
+    opened = [p for p in eng.opened if p.endswith(b"about.cfg")]
+    assert opened == [BASE.dir + b"\\about.cfg", W + b"3331110002\\about.cfg"]
+
+
+def test_the_steps_after_a_failed_start_judge_by_the_same_rule():
+    """A start that stopped with the pair: the names step finds no clash for
+    related mods, so the revert step takes the mods outside the good set out."""
+    mods = [QMM, BASE, addon(b"extends = basemod\r\n")]
+    s = Start(mods, compiled=[QMM.dir, BASE.dir], compile_prev=pend(*mods), logs=LOGS)
+    eng, plan = check(s)
+    assert plan.why == b"failed-revert" and [i for i, _f, _j in plan.off] == [2]
+
+
+_FRAGMENTS = [b"extends = basemod", b"Extends=2221110001", b"extends = ", b"id = other",
+              b"id = basemod", b"# extends = basemod", b"name = x", b"extends basemod",
+              b"  extends\t=\t basemod  ", b"extends = base mod", b"extends = BASEMOD",
+              b"extends = basemod\xc3\xa9", b"requires = basemod", b"setting = a;bool;1;A",
+              b"\xef\xbb\xbfextends = basemod", b"=", b"extends=x=basemod", b"~239", b"",
+              b"extends = basemod.1", b"extends = _-.", b"\x00extends = basemod"]
+_EOLS = [b"\r\n", b"\n", b"\r", b"\n\n", b""]
+
+
+def test_random_about_files_are_read_as_the_twin_reads_them():
+    rng = random.Random(20261005)
+    for _ in range(120):
+        about = b"".join(rng.choice(_FRAGMENTS) + rng.choice(_EOLS)
+                         for _ in range(rng.randint(0, 6)))
+        check(judged(BASE, addon(about)))

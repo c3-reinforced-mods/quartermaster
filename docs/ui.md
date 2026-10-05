@@ -437,7 +437,9 @@ the same one cannot both load (twin: `ref/guard.py`, which has the rules).
   the SW_Frontline_Protocol autotest does) - log lines `[qm] run: ...`.
 - **The window**: `qmUiModel` marks an enabled row that clashes WARN when
   it reads OK, NEW or ? (`stsrc<i>` = `globals`, `why<i>` names the file and
-  the other mod) and a row the guard switched off (`gdoff<i>`, its Details line
+  the other mod; since 0.1.4 an add-on and the mod its about.cfg `extends`
+  are no clash here, in `qmUiAct`'s pending check or in the boot's lines -
+  `qmGlobRelated`) and a row the guard switched off (`gdoff<i>`, its Details line
   says why). After every command `qmUiAct` checks the pending set; a clash
   shows on the message line (orange, after an about.cfg FAIL), in the row's
   Details line (`pcl<i>`), and as a `Note:` line of the confirm dialog, which

@@ -8,7 +8,8 @@ requires:
 //! it after qmKnown and prints its lines in the report's Boot block, the
 //! manager's model (qmUiModel) reads the same lists for the rows.
 //!
-//! A clash is two enabled mods that ship the same global script: only the
+//! A clash is two enabled mods that ship the same global script - unless one
+//! extends the other in its about.cfg (qmGlobRelated, 0.1.4): only the
 //! later one's copy loads, the other mod's libraries then usually miss
 //! names, and the game stops at "Error compiling scripts" before anything of
 //! Quartermaster runs. Which of them the player keeps is the player's choice;
@@ -111,6 +112,10 @@ for qmGbJ:=qmGbI+1 to qmGbN-1 do
 if (qmGbOn[qmGbJ]=1) and (StrLength(qmGbFiles[qmGbJ])>1) and (qmGbCn<64) then
 begin
    qmGlobFirst(qmGbFiles[qmGbI], qmGbFiles[qmGbJ], qmGbF);
+   // An add-on and the mod it extends are no clash (0.1.4, qmGlobRelated).
+   if (qmGbF<>'') then
+   if qmGlobRelated(ParserGetValueByKeyByHandle(qmGbG, 'dir'+IntToStr(qmGbI)), ParserGetValueByKeyByHandle(qmGbG, 'dir'+IntToStr(qmGbJ))) then
+   qmGbF := '';
    if (qmGbF<>'') then
    begin
       ParserSetIntValueByKeyByHandle(qmGbG, 'ca'+IntToStr(qmGbCn), qmGbI);

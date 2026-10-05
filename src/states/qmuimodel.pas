@@ -202,6 +202,10 @@ for qmUmJ:=0 to qmUmN-1 do
 if (qmUmJ<>qmUmI) and (ParserGetIntValueByKeyByHandle(qmUmUi, 'en'+IntToStr(qmUmJ))=1) and (StrLength(qmUmGl[qmUmJ])>1) then
 begin
    qmGlobFirst(qmUmGl[qmUmI], qmUmGl[qmUmJ], qmUmF);
+   // An add-on and the mod it extends are no clash (0.1.4, qmGlobRelated).
+   if (qmUmF<>'') then
+   if qmGlobRelated(qmUmDirs[qmUmI], qmUmDirs[qmUmJ]) then
+   qmUmF := '';
    // A WARN since 0.1.3, and only on a row that reads OK, NEW or ? (no
    // report yet): the game loaded both, and a failed start is the guard's to
    // undo (plan S17); a WARN or FAIL of the row's own files stays.

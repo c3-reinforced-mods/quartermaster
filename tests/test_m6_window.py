@@ -427,6 +427,37 @@ def test_apply_asks_about_a_pending_set_with_a_clash():
     assert ui(eng, "pcn") == b"0" and ui(eng, "canapply") == b"0"
 
 
+def related_about(eng):
+    """qm_about as qmAbout leaves it when Cannons' about.cfg says it extends
+    State vs Country (by its Workshop number)."""
+    eng.set("qm_about", n=3, dir0=SVC, nm0=b"|1325221799|", ext0=b"",
+            dir1=CANNONS, nm1=b"|1450025705|", ext1=b"1325221799",
+            dir2=QM, nm2=b"|quartermaster|", ext2=b"")
+
+
+def test_an_add_on_and_the_mod_it_extends_are_no_clash_in_the_window():
+    # 0.1.4: the pair the start-up guard lets start together reads as it is,
+    # not WARN, and the Apply has no clash note for it.
+    eng = globals_window(True)
+    related_about(eng)
+    cmd(eng, "open")
+    assert ui(eng, "stsrc0") != b"globals" and ui(eng, "stsrc1") != b"globals"
+    assert b"only the later one" not in ui(eng, "why0") + ui(eng, "why1")
+    assert any(b"ui model globals: rows with global scripts clashing=0" in l for l in eng.log)
+    eng = globals_window(False)
+    related_about(eng)
+    cmd(eng, "open")
+    cmd(eng, "select", arg=1)
+    cmd(eng, "activate")
+    assert ui(eng, "pcn") == b"0" and ui(eng, "pcl1") == b""
+    # Without the extends line the same pair is a clash again.
+    eng = globals_window(False)
+    cmd(eng, "open")
+    cmd(eng, "select", arg=1)
+    cmd(eng, "activate")
+    assert ui(eng, "pcn") == b"1"
+
+
 def test_the_guard_notice_opens_once_and_ok_closes_it():
     eng = globals_window(False)
     eng.set("qm_glob", gdn=1, gdd0=CANNONS, gdt0=b"Cannons Attack Automatically",

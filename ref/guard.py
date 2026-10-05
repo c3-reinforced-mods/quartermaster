@@ -60,6 +60,20 @@ start that stopped all the same:
     A start the guard restarted and that compiled logs neither mark, so the
     start after it is ordinary; when that one stops too, the next step
     follows. chosen.cfg is not trusted here, and the guard clears it;
+  - an add-on and its base are not a clash (0.1.4): a mod whose about.cfg
+    says `extends = <id>` and the mod that id names - its declared `id` or its
+    folder (the Workshop number, the local folder name), the names
+    ref/about.py `names` gives - may ship the same global script. Either way
+    round (`related`): a base earlier in mods.ini than its add-on is not
+    switched off for the add-on's claim. Only these two keys of about.cfg are
+    read (`about_of`; the rules are ref/about.py parse: the last line of a
+    key counts, an id that is not a valid id counts as none), by raw bytes as
+    the manager reads the file. Which copy of the file loads is still the
+    load order's business: one of the two replaces the other whole. The boot,
+    the window and the Apply do not call the pair a clash either
+    (`conflicts`, `conflict_pairs`; src/lib/qmglob.pas qmGlobRelated, which
+    reads qm_about). A start that stops all the same is undone by the steps
+    below, which judge by the same rule;
   - a dir the guard cannot compare safely (a byte outside printable ASCII,
     or `~`, which the files escape) counts as known and as good: the guard
     never switches off what it cannot identify;
@@ -135,6 +149,7 @@ The note (guard.cfg) is the engine parser's flat file, keys:
 """
 
 __all__ = ["LIB", "GLOBAL", "SOURCE", "COMPILED_REL", "fold", "comparable", "global_names",
+           "ABOUT_INTS", "about_of", "mod_names", "related",
            "GMod", "known_set", "is_known", "quarantine", "conflicts", "COMPILE_ERROR",
            "LOG_INTS", "log_failed", "failed", "fallback",
            "first_shared", "conflict_pairs", "Plan", "decide",
@@ -176,12 +191,50 @@ def global_names(lib_files, has_global, has_source):
     return out
 
 
+#: The guard reads at most this many Integers (4 bytes each) of an about.cfg,
+#: as the manager does (src/states/qmabout.pas).
+ABOUT_INTS = 262144
+
+
+def about_of(data):
+    """`(id, extends)` of a mod's about.cfg as the guard reads it: `data` the
+    file's bytes (None: the mod ships none), cut at the first zero byte or
+    ABOUT_INTS Integers like the game's reader, and read by ref/about.py
+    parse - the last line of a key counts, an id or extends that is not a
+    valid id is empty. Both lower case."""
+    if data is None:
+        return b"", b""
+    from ref import about as A
+    a = A.parse(data[:ABOUT_INTS * 4].split(b"\x00", 1)[0])
+    return a.id, a.extends
+
+
+def mod_names(d, declared):
+    """Every name a mod answers to as an `extends` target: its declared id
+    (`declared`, may be empty) and its folder identity - the Workshop number
+    or the local folder name, ASCII lower case (ref/about.py names)."""
+    from ref import order as O
+    out = [declared] if declared else []
+    origin, ident = O.identity(d)
+    if origin in (O.WORKSHOP, O.LOCAL):
+        low = O.ascii_lower(ident)
+        if low not in out:
+            out.append(low)
+    return out
+
+
 class GMod(object):
-    """One registered mod as the guard sees it, in load order."""
+    """One registered mod as the guard sees it, in load order. `about` is the
+    bytes the guard reads for it: its about.cfg, or for a Workshop mod without
+    one Quartermaster's known\\<number>.cfg, as the manager does
+    (src/states/qmabout.pas); None: neither. It is read only for a mod that
+    ships a global script, the only kind that can claim or be judged. `ext` is
+    the id its `extends` names (empty: none) and `ids` the names it answers
+    to."""
 
-    __slots__ = ("dir", "title", "on", "is_self", "files", "hooks")
+    __slots__ = ("dir", "title", "on", "is_self", "files", "hooks", "ids", "ext")
 
-    def __init__(self, dir, title=b"", on=True, is_self=False, files=(), hooks=b""):
+    def __init__(self, dir, title=b"", on=True, is_self=False, files=(), hooks=b"", about=None):
         self.dir = dir
         self.title = title
         self.on = on
@@ -190,6 +243,8 @@ class GMod(object):
         # The first of Quartermaster's hook files (plan S5) the mod ships, in
         # the guard's order (HOOK_ORDER), or b"".
         self.hooks = hooks
+        declared, self.ext = about_of(about)
+        self.ids = mod_names(dir, declared)
 
     def __repr__(self):
         return "GMod(%r, %s%s, %r)" % (self.dir, "on" if self.on else "off",
@@ -207,25 +262,38 @@ def is_known(d, known):
     return not comparable(d) or fold(d) in known
 
 
+def related(a, b):
+    """An add-on and its base (ref/about.py `_related`): `a` extends `b` or `b`
+    extends `a`, by the names each answers to."""
+    return (a.ext != b"" and a.ext in b.ids) or (b.ext != b"" and b.ext in a.ids)
+
+
 def quarantine(mods, trusted):
     """`[(i, file, j)]`: mod i is switched off, because mod j claims `file`.
     `trusted`: the folded dirs that claim first (pass 1); every other enabled
-    mod is judged in load order (pass 2)."""
+    mod is judged in load order (pass 2). A claim by the mod's base, or by an
+    add-on of it, is no clash (`related`); j is the first claimant that is
+    not one."""
     claimed = {}
     for i, m in enumerate(mods):
         if m.on and not m.is_self and is_known(m.dir, trusted):
             for f in m.files:
-                claimed.setdefault(f, i)
+                claimed.setdefault(f, []).append(i)
     off = []
     for i, m in enumerate(mods):
         if not m.on or m.is_self or is_known(m.dir, trusted):
             continue
-        hit = next(((f, claimed[f]) for f in m.files if f in claimed), None)
+        hit = None
+        for f in m.files:
+            by = next((j for j in claimed.get(f, ()) if not related(m, mods[j])), None)
+            if by is not None:
+                hit = (f, by)
+                break
         if hit is not None:
             off.append((i, hit[0], hit[1]))
         else:
             for f in m.files:
-                claimed.setdefault(f, i)
+                claimed.setdefault(f, []).append(i)
     return off
 
 
@@ -296,19 +364,21 @@ def conflicts(mods):
     """`{i: [(file, j)]}` over the enabled mods (known or not): for every
     global script two of them ship, each gets the other one. The window and
     the report warn of these, and the Apply asks before it writes a set that
-    has any."""
-    first = {}
+    has any. An add-on and the mod it extends are no clash (`related`, 0.1.4):
+    neither gets the other for a file they share."""
+    seen = {}
     out = {}
     for i, m in enumerate(mods):
         if not m.on or m.is_self:
             continue
         for f in m.files:
-            if f in first:
-                j = first[f]
-                out.setdefault(i, []).append((f, j))
-                out.setdefault(j, []).append((f, i))
-            else:
-                first[f] = i
+            # Every earlier mod that ships it, as the window pairs them
+            # (src/states/qmuimodel.pas); until 0.1.4 only the first one.
+            for j in seen.get(f, ()):
+                if not related(m, mods[j]):
+                    out.setdefault(i, []).append((f, j))
+                    out.setdefault(j, []).append((f, i))
+            seen.setdefault(f, []).append(i)
     return out
 
 
@@ -320,13 +390,14 @@ def first_shared(a, b):
 def conflict_pairs(mods):
     """`[(a, b, file)]`, a < b both enabled, `file` the first global script of
     a's list that b ships too: the boot's clash lines and the Apply's refusal
-    (src/states/qmglobals.pas, qmuiact.pas), at most 64."""
+    (src/states/qmglobals.pas, qmuiact.pas), at most 64. An add-on and the mod
+    it extends are no pair (`related`; qmGlobRelated, 0.1.4)."""
     out = []
     on = [i for i, m in enumerate(mods) if m.on and not m.is_self and m.files]
     for x, a in enumerate(on):
         for b in on[x + 1:]:
             f = first_shared(mods[a].files, mods[b].files)
-            if f is not None and len(out) < 64:
+            if f is not None and not related(mods[a], mods[b]) and len(out) < 64:
                 out.append((a, b, f))
     return out
 

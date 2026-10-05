@@ -271,6 +271,29 @@ def test_clash_pairs_name_the_first_shared_file_of_the_earlier_mod():
                      (b"855882129", b"1325221799", b"lib\\miscext2.script")]
 
 
+def test_an_add_on_and_the_mod_it_extends_are_no_clash_for_the_window_either():
+    """0.1.4: Cannons declaring that it extends State vs Country (by its
+    Workshop number): no pair, no conflict entry; New Terrain, which ships
+    files of both and extends neither, still clashes with each."""
+    def addon(key, about):
+        m = gmod(key)
+        return G.GMod(m.dir, m.title, m.on, m.is_self, m.files, about=about)
+    svc, cannons = gmod(b"1325221799"), addon(b"1450025705", b"extends = 1325221799\r\n")
+    assert G.related(svc, cannons) and G.related(cannons, svc)
+    assert G.conflict_pairs([svc, cannons, QM]) == []
+    assert G.conflicts([svc, cannons, QM]) == {}
+    # A third mod clashes with both, and the add-on with it, not with its base.
+    unit = G.GMod(WS + b"5550001", b"Unit", True, False, [b"lib\\unit.script"])
+    mods = [svc, cannons, unit, QM]
+    assert G.conflict_pairs(mods) == [(0, 2, b"lib\\unit.script"), (1, 2, b"lib\\unit.script")]
+    c = G.conflicts(mods)
+    assert c[1] == [(b"lib\\unit.script", 2)]
+    assert c[2] == [(b"lib\\unit.script", 0), (b"lib\\unit.script", 1)]
+    # Without the extends line the pair is what it was.
+    plain = addon(b"1450025705", b"name = Cannons\r\n")
+    assert G.conflict_pairs([svc, plain, QM]) == [(0, 1, b"lib\\unit.script")]
+
+
 def test_a_mod_that_is_off_neither_claims_nor_is_judged():
     mods = [gmod(b"1325221799", on=False), gmod(b"1450025705"), QM]
     assert G.decide(mods, known(b"1325221799")).why == b"clean"

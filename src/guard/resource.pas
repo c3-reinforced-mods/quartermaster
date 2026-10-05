@@ -332,6 +332,21 @@ var qmGdState : array [0..511] of Integer;
 var qmGdOn : array [0..511] of Integer;
 var qmGdHit : array [0..511] of String;
 var qmGdBy : array [0..511] of Integer;
+// What an enabled mod's about.cfg says (ref/guard.py about_of, mod_names): the
+// id it declares, the folder identity (Workshop number or local folder name),
+// and the id its `extends` names. qmGdAny: some mod extends another.
+var qmGdId : array [0..511] of String;
+var qmGdFid : array [0..511] of String;
+var qmGdExt : array [0..511] of String;
+var qmGdAny : Boolean = False;
+var qmGdWsDir : String = '..\..\workshop\content\333420\';
+var qmGdIdSet : String = 'abcdefghijklmnopqrstuvwxyz0123456789_.-';
+var qmGdTbl : String = ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz';
+var qmGdAp, qmGdAcur, qmGdAk, qmGdAva, qmGdAid, qmGdAex, qmGdAe, qmGdXr : String;
+var qmGdAf, qmGdAv, qmGdAb, qmGdAs, qmGdAi, qmGdAn, qmGdAeq, qmGdAc, qmGdXc, qmGdXb : Integer;
+var qmGdAdone, qmGdAok, qmGdXo, qmGdQ : Boolean;
+// A judged mod's related mods, as `|j|` (an add-on and its base).
+var qmGdRel : String = '|';
 var qmGdTag, qmGdD, qmGdLast, qmGdT, qmGdOwn, qmGdDesc, qmGdTags, qmGdUrl, qmGdNt : String;
 var qmGdNumf, qmGdVis : Integer;
 var qmGdDis, qmGdAcc, qmGdBan, qmGdRoot : Boolean;
@@ -367,6 +382,9 @@ begin
       qmGdOn[qmGdI] := 0;
       qmGdHit[qmGdI] := '';
       qmGdBy[qmGdI] := -1;
+      qmGdId[qmGdI] := '';
+      qmGdFid[qmGdI] := '';
+      qmGdExt[qmGdI] := '';
       qmGdOk := (StrLength(qmGdD)>0) and (StrPos('~', qmGdD)=0);
       for qmGdC:=1 to StrLength(qmGdD) do
       begin
@@ -398,6 +416,144 @@ begin
          qmGdFiles[qmGdI] := qmGdFiles[qmGdI]+'dmscript.global|';
          if (ModLibGetFileExist(qmGdI, 'data\scripts\dmscript.source')) then
          qmGdFiles[qmGdI] := qmGdFiles[qmGdI]+'dmscript.source|';
+      end;
+   end;
+   // What each mod that ships a global script says about itself (ref/guard.py
+   // about_of, mod_names): only such a mod can claim a file or be judged, so
+   // no other about.cfg is read. After the list, so Quartermaster's own folder
+   // is known for the known\<number>.cfg fallback.
+   for qmGdI:=0 to qmGdN-1 do
+   if (qmGdState[qmGdI]=1) and (StrLength(qmGdFiles[qmGdI])>1) then
+   begin
+      // Its folder identity (ref/order.py identity): the digits after the
+      // Workshop folder, or the name after mods\ with no further \.
+      if (qmGdFold[qmGdI]<>'') then
+      begin
+         qmGdXr := '';
+         if (SubStr(qmGdFold[qmGdI], 1, StrLength(qmGdWsDir))=qmGdWsDir) then
+         begin
+            qmGdXr := SubStr(qmGdFold[qmGdI], StrLength(qmGdWsDir)+1, StrLength(qmGdFold[qmGdI])-StrLength(qmGdWsDir));
+            qmGdXo := (StrLength(qmGdXr)>0);
+            for qmGdXc:=1 to StrLength(qmGdXr) do
+            begin
+               qmGdXb := Ord(SubStr(qmGdXr, qmGdXc, 1));
+               if (qmGdXb<48) or (qmGdXb>57) then
+               qmGdXo := False;
+            end;
+            if (not qmGdXo) then
+            qmGdXr := '';
+         end
+         else
+         if (SubStr(qmGdFold[qmGdI], 1, 5)='mods\') then
+         begin
+            qmGdXr := SubStr(qmGdFold[qmGdI], 6, StrLength(qmGdFold[qmGdI])-5);
+            if (StrPos('\', qmGdXr)>0) then
+            qmGdXr := '';
+         end;
+         qmGdFid[qmGdI] := qmGdXr;
+      end;
+      // Its about.cfg - or, for a Workshop mod without one, Quartermaster's
+      // known\<number>.cfg, as the manager reads it (qmabout.pas): the last
+      // `id` and `extends` line, read as the manager reads the file - bytes
+      // up to a zero byte or 262144 Integers, the text table with ~NNN for
+      // any other byte, a tab as a space - and kept only when a valid id
+      // (ref/guard.py about_of).
+      qmGdAp := qmGdDir[qmGdI]+'\about.cfg';
+      if (FileAge(qmGdAp)=-1) and (qmGdSelf>=0) and (qmGdFid[qmGdI]<>'') and (SubStr(qmGdFold[qmGdI], 1, StrLength(qmGdWsDir))=qmGdWsDir) then
+      qmGdAp := qmGdDir[qmGdSelf]+'\data\quartermaster\known\'+qmGdFid[qmGdI]+'.cfg';
+      if (FileAge(qmGdAp)<>-1) then
+      begin
+         qmGdAf := OpenFileRead(qmGdAp);
+         qmGdAcur := '';
+         qmGdAid := '';
+         qmGdAex := '';
+         qmGdAn := 0;
+         qmGdAi := 0;
+         qmGdAdone := False;
+         while (not qmGdAdone) do
+         begin
+            qmGdAv := 0;
+            if (qmGdAi<262144) then
+            ReadInteger(qmGdAf, qmGdAv);
+            qmGdAi := qmGdAi+1;
+            for qmGdAs:=0 to 3 do
+            if (not qmGdAdone) then
+            begin
+               qmGdAb := (qmGdAv shr (qmGdAs*8)) and 255;
+               // The end closes the last line like a line feed does.
+               if (qmGdAb=0) then
+               begin
+                  qmGdAdone := True;
+                  qmGdAb := 10;
+               end;
+               if (qmGdAb=10) then
+               begin
+                  qmGdAn := qmGdAn+1;
+                  if (qmGdAn=1) and (SubStr(qmGdAcur, 1, 12)='~239~187~191') then
+                  qmGdAcur := SubStr(qmGdAcur, 13, StrLength(qmGdAcur)-12);
+                  while (SubStr(qmGdAcur, 1, 1)=' ') do
+                  qmGdAcur := SubStr(qmGdAcur, 2, StrLength(qmGdAcur)-1);
+                  while (StrLength(qmGdAcur)>0) and (SubStr(qmGdAcur, StrLength(qmGdAcur), 1)=' ') do
+                  qmGdAcur := SubStr(qmGdAcur, 1, StrLength(qmGdAcur)-1);
+                  qmGdAeq := StrPos('=', qmGdAcur);
+                  // A comment line's key starts with `#`: it is never id or extends.
+                  if (qmGdAeq>1) then
+                  begin
+                     qmGdAk := SubStr(qmGdAcur, 1, qmGdAeq-1);
+                     qmGdAva := SubStr(qmGdAcur, qmGdAeq+1, StrLength(qmGdAcur)-qmGdAeq);
+                     while (StrLength(qmGdAk)>0) and (SubStr(qmGdAk, StrLength(qmGdAk), 1)=' ') do
+                     qmGdAk := SubStr(qmGdAk, 1, StrLength(qmGdAk)-1);
+                     while (SubStr(qmGdAva, 1, 1)=' ') do
+                     qmGdAva := SubStr(qmGdAva, 2, StrLength(qmGdAva)-1);
+                     qmGdAk := StrToLowerCase(qmGdAk);
+                     if (qmGdAk='id') then
+                     qmGdAid := StrToLowerCase(qmGdAva);
+                     if (qmGdAk='extends') then
+                     qmGdAex := StrToLowerCase(qmGdAva);
+                  end;
+                  qmGdAcur := '';
+               end
+               else
+               if (qmGdAb<>13) then
+               begin
+                  if (qmGdAb=9) then
+                  qmGdAcur := qmGdAcur+' '
+                  else
+                  if (qmGdAb>=32) and (qmGdAb<=122) then
+                  qmGdAcur := qmGdAcur+SubStr(qmGdTbl, qmGdAb-31, 1)
+                  else
+                  begin
+                     qmGdAe := IntToStr(qmGdAb);
+                     while (StrLength(qmGdAe)<3) do
+                     qmGdAe := '0'+qmGdAe;
+                     qmGdAcur := qmGdAcur+'~'+qmGdAe;
+                  end;
+               end;
+            end;
+         end;
+         CloseFile(qmGdAf);
+         // An id that is not a-z, 0-9, _ . - counts as none.
+         qmGdAva := qmGdAid;
+         for qmGdAs:=1 to 2 do
+         begin
+            qmGdAok := (StrLength(qmGdAva)>0);
+            for qmGdAc:=1 to StrLength(qmGdAva) do
+            if (StrPos(SubStr(qmGdAva, qmGdAc, 1), qmGdIdSet)=0) then
+            qmGdAok := False;
+            if (not qmGdAok) then
+            qmGdAva := '';
+            if (qmGdAs=1) then
+            begin
+               qmGdAid := qmGdAva;
+               qmGdAva := qmGdAex;
+            end
+            else
+            qmGdAex := qmGdAva;
+         end;
+         qmGdId[qmGdI] := qmGdAid;
+         qmGdExt[qmGdI] := qmGdAex;
+         if (qmGdAex<>'') then
+         qmGdAny := True;
       end;
    end;
    // The start before stopped only if it had the mods enabled now (ref/guard.py
@@ -449,9 +605,24 @@ begin
    if (qmGdState[qmGdI]=1) and (StrLength(qmGdFiles[qmGdI])>1) then
    qmGdClaim := qmGdClaim+SubStr(qmGdFiles[qmGdI], 2, StrLength(qmGdFiles[qmGdI])-1);
    // Pass 2: each other mod, in load order, loses to a claim or claims its own.
+   // A claim by the mod's base, or by an add-on of it, is no clash (ref/guard.py
+   // related): the claimants - trusted or kept - that are one, as `|j|`.
    for qmGdI:=0 to qmGdN-1 do
    if (qmGdState[qmGdI]=2) then
    begin
+      qmGdRel := '|';
+      if (qmGdAny) then
+      for qmGdJ:=0 to qmGdN-1 do
+      if (qmGdJ<>qmGdI) and ((qmGdState[qmGdJ]=1) or (qmGdState[qmGdJ]=3)) then
+      begin
+         qmGdQ := False;
+         if (qmGdExt[qmGdI]<>'') and ((qmGdExt[qmGdI]=qmGdId[qmGdJ]) or (qmGdExt[qmGdI]=qmGdFid[qmGdJ])) then
+         qmGdQ := True;
+         if (qmGdExt[qmGdJ]<>'') and ((qmGdExt[qmGdJ]=qmGdId[qmGdI]) or (qmGdExt[qmGdJ]=qmGdFid[qmGdI])) then
+         qmGdQ := True;
+         if (qmGdQ) then
+         qmGdRel := qmGdRel+IntToStr(qmGdJ)+'|';
+      end;
       qmGdRest := SubStr(qmGdFiles[qmGdI], 2, StrLength(qmGdFiles[qmGdI])-1);
       while (qmGdRest<>'') and (qmGdHit[qmGdI]='') do
       begin
@@ -463,7 +634,14 @@ begin
             qmGdF := SubStr(qmGdRest, 1, qmGdP-1);
             qmGdRest := SubStr(qmGdRest, qmGdP+1, StrLength(qmGdRest)-qmGdP);
             if (StrPos('|'+qmGdF+'|', qmGdClaim)>0) then
-            qmGdHit[qmGdI] := qmGdF;
+            begin
+               if (StrLength(qmGdRel)<=1) then
+               qmGdHit[qmGdI] := qmGdF
+               else
+               for qmGdJ:=0 to qmGdN-1 do
+               if (qmGdHit[qmGdI]='') and (qmGdJ<>qmGdI) and ((qmGdState[qmGdJ]=1) or (qmGdState[qmGdJ]=3)) and (StrPos('|'+qmGdF+'|', qmGdFiles[qmGdJ])>0) and (StrPos('|'+IntToStr(qmGdJ)+'|', qmGdRel)=0) then
+               qmGdHit[qmGdI] := qmGdF;
+            end;
          end;
       end;
       if (qmGdHit[qmGdI]='') then
@@ -480,10 +658,10 @@ begin
          // Who claimed it: the first trusted mod that ships it, else the first
          // mod kept before this one.
          for qmGdJ:=0 to qmGdN-1 do
-         if (qmGdBy[qmGdI]=-1) and (qmGdState[qmGdJ]=1) and (StrPos('|'+qmGdHit[qmGdI]+'|', qmGdFiles[qmGdJ])>0) then
+         if (qmGdBy[qmGdI]=-1) and (qmGdState[qmGdJ]=1) and (StrPos('|'+qmGdHit[qmGdI]+'|', qmGdFiles[qmGdJ])>0) and (StrPos('|'+IntToStr(qmGdJ)+'|', qmGdRel)=0) then
          qmGdBy[qmGdI] := qmGdJ;
          for qmGdJ:=0 to qmGdI-1 do
-         if (qmGdBy[qmGdI]=-1) and (qmGdState[qmGdJ]=3) and (StrPos('|'+qmGdHit[qmGdI]+'|', qmGdFiles[qmGdJ])>0) then
+         if (qmGdBy[qmGdI]=-1) and (qmGdState[qmGdJ]=3) and (StrPos('|'+qmGdHit[qmGdI]+'|', qmGdFiles[qmGdJ])>0) and (StrPos('|'+IntToStr(qmGdJ)+'|', qmGdRel)=0) then
          qmGdBy[qmGdI] := qmGdJ;
       end;
    end;

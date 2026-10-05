@@ -77,6 +77,17 @@ a Workshop mod that has no about.cfg by its number. Quartermaster itself is
   one `exclusive` slot (unless one extends the other or lists it in
   `compatibleWith`), a mod it is `incompatibleWith`. Apply refuses a set that
   breaks one; a WARN is shown in the confirm dialog and does not stop it.
+- **The start guard.** A mod that has not started with the others - a new
+  subscription, or one switched on in modman - is taken out of the start when
+  it ships a global script an enabled mod already ships (a whole-file script
+  in `data\scripts\lib\`, `dmscript.global`, `dmscript.source`). An add-on and
+  its base are the exception: `extends = <id>` names the base, by its `id` or
+  its folder, and the pair may ship the same script. The guard reads only
+  `id` and `extends` of about.cfg, before the game's scripts compile, and
+  looks one step only: an add-on of an add-on does not excuse a clash with
+  the base. The window, the report and the Apply do not call the pair a clash
+  either. Keep whole-file scripts in the base all the same: one of the two
+  copies replaces the other, and which one is the load order's choice.
 - **The activation check.** A mod the rules let in is then tried with the
   mods it would join, in the running game and before any restart: every file
   it would be merged into must compile, its own `.inc` files the game would
