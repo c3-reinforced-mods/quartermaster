@@ -3,7 +3,7 @@
 Quartermaster - merge framework + in-game mod manager for Cossacks 3. What it is and how
 to build and test it: [README.md](README.md). The design: [docs/plan.md](docs/plan.md).
 
-Working copy: `C:\projects\Cossacks 3\cossacks3-quartermaster`. Repo: `c3-reinforced-mods/quartermaster` (private; moved 2026-10-03 from `pjugowiec/cossacks3-quartermaster`, which redirects).
+Working copy: `C:\projects\Cossacks 3\cossacks3-quartermaster`. Repo: `c3-reinforced-mods/quartermaster` (moved 2026-10-03 from `pjugowiec/cossacks3-quartermaster`, which redirects).
 
 ## Layout
 - `docs/plan.md` - where the design stands, safety decisions, architecture, test mods, milestones, decisions
