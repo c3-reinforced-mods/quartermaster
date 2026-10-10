@@ -28,7 +28,19 @@ def test_mod_ini_has_the_layout_of_a_local_mod():
         with open(path, "rb") as fh:
             theirs = fh.read()
         lines = theirs.replace(b"\r\n", b"\n").split(b"\n")
-        assert [ln.split(b" = ")[0] for ln in lines[1:lines.index(b"section.end")]] == keys
+        # A mod uploaded with a text of several lines has it as a struct
+        # (`key : struct.begin`, a `[*]` line each, `struct.end`): the same
+        # key as the one-line `key[*]` a new mod starts with.
+        theirs_keys, inside = [], False
+        for ln in lines[1:lines.index(b"section.end")]:
+            if ln.endswith(b" : struct.begin"):
+                theirs_keys.append(ln[:-len(b" : struct.begin")] + b"[*]")
+                inside = True
+            elif inside:
+                inside = ln.strip() != b"struct.end"
+            else:
+                theirs_keys.append(ln.split(b" = ")[0])
+        assert theirs_keys == keys
     assert b"   contentfolder = mods\\My_new_mod\r\n" in mine
     assert b"   title = My new mod!\r\n" in mine and b"   filename = My_new_mod\r\n" in mine
 
