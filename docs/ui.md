@@ -31,6 +31,7 @@ regenerates and restarts (below).
 | `qmUiAct`, `qmUiModel`, `qmUiDetails`, `qmUiApply` | `src/states/qmui*.pas` | `data/quartermaster/core.aix` | trigger manager `qm_core` |
 | `qmUiOrder` (load-order commands, twin `ref/order.py ui_move`) | `src/states/qmuiorder.pas` | `data/quartermaster/core.aix` | trigger manager `qm_core` |
 | `qmTick` (restart notice, button caption) | `src/states/qmrestarttick.pas` | `data/quartermaster/core.aix` | trigger manager `qm_core`, from the DoProgress hook |
+| `qmPump` (the tick's work when no frame runs it, see *When no frame runs the tick*) | `src/states/qmpump.pas` | `data/quartermaster/core.aix` | trigger manager `qm_core`, from `ShowQmManager` and `EventQmManager` |
 | EventMainMenu hook | `src/hooks/eventmainmenu.pas` | `data/gui/menu.inc/eventmainmenu.inc` | GUI machine (vanilla state) |
 | OnLanEvent hook (host settings, a client's side) | `src/hooks/onlanevent.pas` | `data/gui/menu.inc/onlanevent.inc` | GUI machine (vanilla state), runs `qmHostRecv` |
 | `qmSetSave` (the Options view's save) | `src/states/qmsetsave.pas` | `data/quartermaster/core.aix` | trigger manager `qm_core`, from `qmTick` |
@@ -229,6 +230,52 @@ get it too - and runs the restart on a later frame, at least a tenth of a
 second after it (`qm_rt rsnote`). A notice whose restart is gone (the request
 withdrawn, the restart dropped) is stale and the window browses again.
 
+## When no frame runs the tick
+
+`qmTick` hangs on a line in DoProgress, and DoProgress is a merged state. The
+copy a start loads is the one the last generation wrote; when a mod it was
+merged from has been switched off outside Quartermaster since (mods.ini by
+the game's own manager, by hand, by unsubscribing), that copy calls a
+library that is not loaded and does not compile. *Hands-on, 2026-10-10:*
+Reinforced - Core off, the outputs made with it on; the log said `Compile
+script error: DoProgress`, the boot (the CameraControl hook, another state)
+regenerated and asked for its restart, the restart never came, and the
+window answered every Apply with "Still checking the last change; a moment."
+for minutes: restart, Apply, the activation check and the settings' save all
+waited for a tick that did not run. The next start loaded the new files and
+was fine.
+
+- **The heartbeat.** Every run of `qmTick` by a frame leaves its time in
+  `qm_rt tkat` (tenths of a second).
+- **`qmPump`** runs `qmTick` itself when that time has stood still for a
+  second, in the main menu with no boot running (`tkat` 0: no frame ever
+  ran it in this start). `ShowQmManager` runs it before a fresh open,
+  `EventQmManager` before and after every command, so what the last command
+  left for the tick is done before the next is judged and what a command
+  asks for right after it. A run too many costs nothing: `qmTick` does what
+  is pending and no more. `qm_rt pump` = 1 marks such a run, `pumps` counts
+  them; the first says so in the log.
+- **A pumped tick** does the work - settings, mod files, the activation
+  check, the marker's confirm, an Apply - and leaves out what belongs to a
+  frame: the caption, the version and the lobby line (drawn through
+  `EventQmManager`, which may be the state running the pump), the notices
+  and the run switches, and the restart.
+- **The restart** that is pending then runs in `qmPump`, at once: no later
+  frame would show the notice or wait out the second after the last write,
+  and the minute after which `qmTick` drops a late restart does not count -
+  this process runs files older than the ones on the disk. Main menu,
+  outside a map and no MP sync, as for `qmTick`. So opening the window in
+  such a start restarts the game.
+- **A check that still did not run** five seconds after it was asked
+  (`qm_rt trat`) is named: the message line says that the game is not
+  running Quartermaster's part of the main menu and to start it again.
+
+Not covered: a player who never opens the window in such a start gets no
+restart from Quartermaster in it - nothing of Quartermaster's runs without
+a frame or a click - and the new files load at the next start. The restart
+from the window's states instead of a DoProgress frame is not yet tried in
+the game.
+
 ## Main menu button
 
 The vanilla button reads "Warsztat modow" (with an o-acute) in the Polish locale (`mods.workshop`,
@@ -336,9 +383,12 @@ restart is scheduled, for the notice), and writes:
 | `uiregen` | 1 = the player asked for a regeneration |
 | `setsave`, `setsaveseq` | 1 = accepted options wait to be written: qmTick saves `qm_settings` into `<save>\quartermaster\settings.cfg` on the next main-menu frame and sets 0; the count of Accepts |
 | `hsnext`, `hssent`, `hslast`, `hsdry`, `hsdrop`; `hssig`, `hostin`, `hostn`, `hsparser` | settings of `host` scope in a LAN room (docs/authoring.md): the host's next send (tenths of a second), sends so far, the last set sent, 1 = build the message and do not send it (SelfTest), how many values did not fit into the message (at most 256; qmHostSend, run by qmTick); a client's last set taken, 1 while the host's values are in qm_settings, how many were taken, a parser to read instead of the one the engine hands over (SelfTest; qmHostRecv, run by the OnLanEvent hook). The message is the parser `qm_hostout`: `n`, `m<k>` (mod id), `s<k>` (setting id), `v<k>`, `sig`, number 7301. What a session replaced is in the parser `qm_hostown`: `n`, `m<k>`, `s<k>`, `o<k>` (this machine's own value), `t<k>` (the host's in effect); qmSetSave writes the own values into settings.cfg, and qmTick clears it when the session is over |
-| `trq`, `trrow`, `trsig` | the activation check asked (see *Activation check* below): the request count, the row just activated or -1 for Apply's, the pending set it is for (`qmUaSig`); `trdone`, the last request qmTick ran - `open` sets it to `trq`, so a request an earlier window left is never answered into a new one |
+| `trq`, `trrow`, `trsig`, `trat` | the activation check asked (see *Activation check* below): the request count, the row just activated or -1 for Apply's, the pending set it is for (`qmUaSig`); `trdone`, the last request qmTick ran - `open` sets it to `trq`, so a request an earlier window left is never answered into a new one |
 
-qmTick keeps `rsnote` there: the tenth of a second the restart notice was drawn.
+qmTick keeps `rsnote` there: the tenth of a second the restart notice was drawn;
+`trat` is the tenth of a second the activation check was asked. `tkat`, `pump`
+and `pumps` are the tick's heartbeat and qmPump's marks (see *When no frame
+runs the tick*).
 
 The consumer rewrites `mods.ini` only if its content differs (plan S8),
 regenerates, and restarts the vanilla way. It is `qmTick`

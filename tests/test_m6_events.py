@@ -229,6 +229,9 @@ def gui(n=4, ords=(0, 1, 2, 3), pe=(1, 1, 1, 1)):
         # argto is only written for a `move`, which the window no longer sends.
         eng.n_ParserSetValueByKeyByHandle(h, b"cmd", b"")
     eng.states["qmuiact"] = PAS5.Fake(controller)
+    #: how many commands the controller had taken at each run of qmPump
+    eng.pumps = []
+    eng.states["qmpump"] = PAS5.Fake(lambda: eng.pumps.append(len(eng.sent)))
     return eng
 
 
@@ -248,6 +251,18 @@ def test_a_key_release_sends_the_filter_only_when_the_text_changed():
     event(eng, b"key", b"u", 39)            # an arrow key: the text is the same
     event(eng, b"key", b"d", 88)            # a key press: only releases count
     assert len(eng.sent) == 1
+
+
+def test_every_command_runs_the_pump_before_and_after_the_controller():
+    # What the last command left for the tick is done before this one is
+    # judged, what this one asks for right after it (qmpump.pas).
+    eng = gui()
+    eng.texts[FILTER] = b"w"
+    event(eng, b"key", b"u", 87)
+    assert len(eng.sent) == 1 and eng.pumps == [0, 1]
+    # an event that sends no command pumps nothing
+    event(eng, b"key", b"d", 88)
+    assert eng.pumps == [0, 1]
 
 
 # ------------------------------------------------------------ Esc and Enter
@@ -578,3 +593,146 @@ def test_accepted_options_are_saved_once_and_nothing_runs_while_a_boot_does():
     eng = tick_at({}, setsave=1, mfreq=b"create", trq=1, busy=1)
     PAS5.run(eng, "qmTick")
     assert eng.did == []
+
+
+# ------------------------------ qmPump: the tick's work when no frame runs it
+def pumped(ui=None, **rt):
+    """qmPump over qm_rt = `rt`, with the real qmTick and qmRestart; the
+    states the tick runs are recorders."""
+    eng = TickGui()
+    PAS5.load(eng, "qmPump", "qmTick", "qmRestart", "qmMarkerSave")
+    eng.texts[MENU_CAPTION] = b"Mod manager"       # a frame would rename it
+    eng.set("qm_ui", ready=1, **(ui or {}))
+    eng.set("qm_rt", **rt)
+    for name in ("qmModFiles", "qmTrial", "qmUiAct", "qmSetSave", "qmBoot"):
+        eng.states[name.lower()] = PAS5.Fake((lambda n: lambda: eng.did.append(("run", n)))(name))
+    eng.now = 2000.0
+    return eng
+
+
+def test_every_frame_tick_leaves_its_time_and_a_pumped_one_does_not():
+    eng = tick(tick=0)
+    eng.now = 1234.56
+    PAS5.run(eng, "qmTick")
+    assert eng.key(b"qm_rt", b"tkat") == b"12345"
+    eng.set("qm_rt", pump=1)
+    eng.now = 1300.0
+    PAS5.run(eng, "qmTick")
+    assert eng.key(b"qm_rt", b"tkat") == b"12345"
+
+
+def test_the_pump_leaves_a_ticking_game_alone():
+    # A frame ran the tick within the last second: the check is the tick's.
+    eng = pumped(tkat=19995, trq=1, trdone=0)
+    PAS5.run(eng, "qmPump")
+    assert eng.did == [] and eng.key(b"qm_rt", b"pumps") == b""
+    # ... nor during a boot, outside the main menu, or inside its own run
+    for rt, mode in ((dict(busy=1), 1), (dict(pump=1), 1), ({}, 2)):
+        eng = pumped(tkat=0, trq=1, trdone=0, **rt)
+        eng.gamemode = mode
+        PAS5.run(eng, "qmPump")
+        assert eng.did == [] and eng.key(b"qm_rt", b"pumps") == b"", (rt, mode)
+
+
+@pytest.mark.parametrize("tkat", [0, 19990])
+def test_without_a_frame_tick_the_pump_runs_the_activation_check(tkat):
+    # Hands-on, the start of 2026-10-10: DoProgress did not compile, the check
+    # was asked and "Still checking the last change" stayed for minutes.
+    eng = pumped(tkat=tkat, trq=1, trdone=0)
+    PAS5.run(eng, "qmPump")
+    assert eng.did == [("run", "qmTrial"), ("run", "qmUiAct")]
+    assert eng.key(b"qm_rt", b"trdone") == b"1" and eng.key(b"qm_ui", b"cmd") == b"trialdone"
+    assert (eng.key(b"qm_rt", b"pumps"), eng.key(b"qm_rt", b"pump")) == (b"1", b"0")
+    assert eng.key(b"qm_rt", b"tkat") == b"%d" % tkat       # not a frame's run
+    said = [l for l in eng.log if b"pump:" in l]
+    assert len(said) == 1 and (b"in this start" in said[0]) == (tkat == 0)
+    # the second run says nothing again
+    PAS5.run(eng, "qmPump")
+    assert len([l for l in eng.log if b"pump:" in l]) == 1
+    assert eng.key(b"qm_rt", b"pumps") == b"2"
+
+
+def test_a_pump_in_the_first_second_of_the_clock_still_sees_a_tick_that_never_ran():
+    eng = pumped(tkat=0, trq=1, trdone=0)
+    eng.now = 0.5
+    PAS5.run(eng, "qmPump")
+    assert eng.did == [("run", "qmTrial"), ("run", "qmUiAct")]
+
+
+def test_a_pumped_tick_draws_nothing_a_frame_draws():
+    # The window's event state may be the one running the pump: the tick does
+    # not run it again for the caption, the version line or a notice, and a
+    # harness run's walk into a skirmish (15 s over) waits for a frame.
+    eng = pumped(tkat=0, gdshow=1, uishow=1, skphase=2, skt=1, rs=0)
+    PAS5.run(eng, "qmPump")
+    assert [d for d in eng.did if d[0] == "gui"] == []
+    assert eng.key(b"qm_rt", b"gdshow") == b"1" and eng.key(b"qm_rt", b"skphase") == b"2"
+    # the same keys on a frame: the tick draws
+    eng = pumped(tkat=0, gdshow=1, rs=0)
+    PAS5.run(eng, "qmTick")
+    assert ("gui", b"EventQmManager") in eng.did
+
+
+@pytest.mark.parametrize("late", [5, 5000])
+def test_the_pump_runs_an_owed_restart_at_once_however_late(late):
+    # The boot's restart of 2026-10-10 never came. No frame will show the
+    # notice or wait out the second, and the tick's minute does not count.
+    eng = pumped(tkat=0, tick=1, rs=1, rsdue=20000 - late, rskind=b"auto",
+                 rswhy=b"outputs-changed", sync=0)
+    PAS5.run(eng, "qmPump")
+    assert eng.restarted == ["lan", "steam", "restart"]
+    assert eng.key(b"qm_rt", b"rs") == b"2" and eng.key(b"qm_ui", b"mode") == b"2"
+    assert any(b"restart now kind=auto why=outputs-changed from the manager window" in l
+               for l in eng.log)
+    # once
+    PAS5.run(eng, "qmPump")
+    assert eng.restarted == ["lan", "steam", "restart"]
+
+
+@pytest.mark.parametrize("sync, stage", [(1, 0), (0, 1)])
+def test_the_pump_does_not_restart_in_a_map_or_an_mp_sync(sync, stage):
+    eng = pumped(tkat=0, tick=1, rs=1, rsdue=19000, sync=sync)
+    eng.gamestage = stage
+    PAS5.run(eng, "qmPump")
+    assert eng.restarted == [] and eng.key(b"qm_rt", b"rs") == b"1"
+
+
+def test_the_pump_runs_an_apply_and_then_its_restart():
+    eng = pumped(tkat=0, uiapply=1, uiapplyseq=3, sync=0)
+
+    def boot():
+        assert eng.key(b"qm_rt", b"runmode") == b"apply"
+        eng.set("qm_rt", rs=1, rsdue=20011, rskind=b"apply", tick=1)
+    eng.states["qmboot"] = PAS5.Fake(boot)
+    PAS5.run(eng, "qmPump")
+    assert eng.key(b"qm_rt", b"uiapply") == b"0"
+    assert eng.restarted == ["lan", "steam", "restart"]
+    assert eng.key(b"qm_rt", b"tkat") == b"0"               # not a frame's run
+
+
+def test_the_pump_saves_accepted_options_and_asked_mod_files():
+    eng = pumped(tkat=0, setsave=1, mfreq=b"create")
+    PAS5.run(eng, "qmPump")
+    assert eng.did[:2] == [("run", "qmSetSave"), ("run", "qmModFiles")]
+    assert eng.key(b"qm_rt", b"setsave") == b"0"
+
+
+@pytest.mark.parametrize("work", ["trial", "apply", "save", "files"])
+def test_the_heartbeat_says_when_a_long_tick_ended(work):
+    # A trial generation takes seconds, and a click can come before the next
+    # frame: qmPump must not take that time for a tick that stopped.
+    rt = {"trial": dict(trq=1, trdone=0), "apply": dict(uiapply=1),
+          "save": dict(setsave=1), "files": dict(mfreq=b"create")}[work]
+    eng = pumped(tkat=0, **rt)
+    state = {"trial": "qmtrial", "apply": "qmboot", "save": "qmsetsave",
+             "files": "qmmodfiles"}[work]
+
+    def long_work():
+        eng.now += 3.0
+        if work == "files":
+            eng.set("qm_rt", mfreq=b"")
+    eng.states[state] = PAS5.Fake(long_work)
+    PAS5.run(eng, "qmTick")
+    assert eng.key(b"qm_rt", b"tkat") == b"20030"
+    PAS5.run(eng, "qmPump")
+    assert eng.key(b"qm_rt", b"pumps") == b""

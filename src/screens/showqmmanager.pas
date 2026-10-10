@@ -267,6 +267,9 @@ begin
       OpenURL('http://steamcommunity.com/app/333420/workshop/');
       exit;
    end;
+   //! qmPump first: when no frame runs qmTick, a restart the boot asked for
+   //! is still owed, and it runs now (qmpump.pas).
+   StateMachineExecuteState(qmSmCore, 'qmPump', 0);
    ParserSetValueByKeyByHandle(qmSmUi, 'cmd', 'open');
    StateMachineExecuteState(qmSmCore, 'qmUiAct', 0);
    if (ParserGetValueByKeyByHandle(qmSmUi, 'cmd')='open') then
@@ -459,11 +462,11 @@ begin
    var qmSmOval : String;
    var qmSmOy : Integer;
    var qmSmOlb : String;
+   var qmSmOll : Integer;
+   var qmSmOcut : Boolean;
    for qmSmOr:=0 to 9 do
    begin
       qmSmOk := qmSmOpg*10+qmSmOr;
-   var qmSmOll : Integer;
-   var qmSmOcut : Boolean;
       if (qmSmOk<qmSmOn) then
       begin
          qmSmOs := IntToStr(qmSmOk);

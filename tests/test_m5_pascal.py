@@ -36,7 +36,8 @@ W = b"..\\..\\workshop\\content\\333420\\"
 
 PAS.BYREF_NATIVES["modlibrarygetdata"] = tuple(range(1, 16))
 
-DOTTED = ((b"gMap.gamestage", b"qmxgmapgamestage"),)
+DOTTED = ((b"gMap.gamestage", b"qmxgmapgamestage"),
+          (b"gInterface.gamemode", b"qmxgintgamemode"))
 
 
 def flat(keys):
@@ -80,6 +81,7 @@ class Engine(PAS.Engine):
         self.keep_without_ini = False
         self.now = 1000.0
         self.gamestage = 0
+        self.gamemode = 1               # the main menu (n_gc_gamemode_mainmenu)
         self.restarted = []
         self.calls = []
         self.register7 = b""
@@ -106,6 +108,12 @@ class Engine(PAS.Engine):
 
     def n_gc_map_gamestage_none(self):
         return 0
+
+    def n_qmxgintgamemode(self):
+        return self.gamemode
+
+    def n_gc_gamemode_mainmenu(self):
+        return 1
 
     # LAN (qmTick's host settings; classes.script:7557-7558): no session
     # unless a test sets `lanmode` / `lanclients`; the last message received

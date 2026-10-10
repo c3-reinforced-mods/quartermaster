@@ -302,10 +302,14 @@ def show(ui, rt=None, report=None, answer=True, takes_open=True):
             put(eng, name, keys)
     eng.answer = answer
 
+    eng.order = []
+
     def act():
+        eng.order.append("open")
         if takes_open:
             eng.n_ParserSetValueByKeyByHandle(eng.named[b"qm_ui"], b"cmd", b"")
     eng.states["qmuiact"] = PAS5.Fake(act)
+    eng.states["qmpump"] = PAS5.Fake(lambda: eng.order.append("pump"))
     eng.states["showqmmanager"].run()
     return eng
 
@@ -486,6 +490,43 @@ def test_the_details_panel_shows_its_lines():
     assert b"MGraphics - Lights, Workshop" + BR + b"Loads 3rd" in texts
 
 
+def test_a_fresh_open_runs_the_pump_before_it_asks_for_the_model():
+    # A restart the boot asked for is owed when no frame runs the tick
+    # (qmpump.pas): it runs before the window is built, not at the first click.
+    eng = show(model(ROWS))
+    assert eng.order == ["pump", "open"]
+    # a redraw of the open window is not an open
+    eng.order[:] = []
+    eng.states["showqmmanager"].run()
+    assert eng.order == []
+
+
+def test_opening_the_window_in_a_start_without_a_tick_runs_the_owed_restart():
+    # The start of 2026-10-10 from the boot on: outputs made with a mod that
+    # was then switched off outside Quartermaster, DoProgress did not compile,
+    # the boot regenerated and asked for its restart (rs = 1), and no frame
+    # ran the tick. The real pump, tick and restart under the real window.
+    eng = Screen()
+    eng.states["showqmmanager"] = PAS.State(window_code(), eng)
+    PAS5.load(eng, "qmPump", "qmTick", "qmRestart", "qmMarkerSave")
+    put(eng, b"qm_ui", dict(model(ROWS), ready=1))
+    put(eng, b"qm_rt", dict(tick=1, rs=1, rsdue=9000, rskind=b"auto",
+                            rswhy=b"outputs-changed", sync=0, busy=0))
+    eng.answer = True
+    eng.states["qmuiact"] = PAS5.Fake(
+        lambda: eng.n_ParserSetValueByKeyByHandle(eng.named[b"qm_ui"], b"cmd", b""))
+    eng.now = 1000.0
+    eng.states["showqmmanager"].run()
+    assert eng.restarted == ["lan", "steam", "restart"]
+    assert eng.key(b"qm_rt", b"rs") == b"2" and eng.key(b"qm_rt", b"pumps") == b"1"
+    # the same open in a start whose frames tick: the restart is the tick's
+    put(eng, b"qm_rt", dict(rs=1, tkat=9995, pumps=0))
+    eng.restarted[:] = []
+    eng.find(b"QmManager").visible = False          # closed: the next show is an open
+    eng.states["showqmmanager"].run()
+    assert eng.restarted == [] and eng.key(b"qm_rt", b"pumps") == b"0"
+
+
 def test_drawing_again_rebuilds_the_window_in_place():
     eng = show(model(ROWS))
     eng.states["showqmmanager"].run()
@@ -543,47 +584,6 @@ def test_the_options_view_draws_each_setting_by_its_type():
     assert page[b"boacc"] == (b"Accept", True) and b"bapply" not in page
 
 
-def test_the_mod_files_view_lists_the_game_files_and_how_they_are_treated():
-    ui = model(ROWS, panel=3, mfrow=3, vn=2, vsel=1, mfhas=0, typed=b"onc",
-               v0=b"gui\\menu.inc\\oncamera.inc", vc0=b"merge",
-               v1=b"game\\var\\units.cfg", vc1=b"wta")
-    eng = show(ui)
-    lst = win(eng, b"main.wnd.vbox.vfiles")
-    assert lst.items == [(TAB + b"gui\\menu.inc\\oncamera.inc" + TAB + b"merged with other mods", 0),
-                         (TAB + b"game\\var\\units.cfg" + TAB +
-                          b"not merged - the last mod's copy is used", 1)]
-    assert lst.sel == 1
-    bs = buttons(eng)
-    assert bs[b"bmfabout"] == (b"Create about.cfg", True)
-    assert bs[b"bmfcopy"] == (b"Copy into mod", True) and bs[b"bmfback"] == (b"Back", True)
-    head = next(t for t in eng.under(win(eng, b"main.wnd.vbox").handle, "text"))
-    assert head.text.startswith(b"Game files of mods\\Fresh ")
-    eng = show(dict(ui, vsel=-1, mfhas=1))
-    bs = buttons(eng)
-    assert bs[b"bmfabout"][1] is False and bs[b"bmfcopy"][1] is False
-
-
-# ---------------------------------------------------------------- dialogs
-def test_the_confirm_dialog_lists_the_changes_and_the_load_order():
-    ui = model(ROWS, mode=1, confn=2, conf0=b"+ ZoomOut!", conf1=b"- Broken", confon=3,
-               confo0=b"1. MGraphics - Lights", confo1=b"2. ZoomOut!", confo2=b"3. Quartermaster",
-               confordchg=1)
-    eng = show(ui)
-    texts = dict((t.name, t.text) for t in eng.under(win(eng, b"confirm.cwnd").handle, "text"))
-    assert texts[b"ctext"] == b"Apply these changes and restart the game?"
-    assert texts[b"clist"] == b"+ ZoomOut!" + BR + b"- Broken"
-    assert texts[b"colist"] == b"1. MGraphics - Lights" + BR + b"2. ZoomOut!" + BR + \
-        b"3. Quartermaster"
-    assert texts[b"cohead"] == b"Load order (changed):"
-    assert texts[b"cnote"] == b"Enter confirms, Esc cancels."
-    assert buttons(eng, b"confirm")[b"byes"] == (b"Apply", True)
-    assert win(eng, b"confirm").visible and not win(eng, b"notice").visible
-
-
-@pytest.mark.parametrize("rule, head, note", [
-    (0, b"These mods cannot be active together",
-     b"Both mods of each pair replace the same core script."),
-    (1, b"This set of mods cannot be applied",
 def options(labels):
     """The Options view over bool settings with `labels`; {name: element} of
     its label texts, and the engine."""
@@ -666,6 +666,47 @@ def test_a_label_is_measured_in_the_font_it_is_drawn_in():
     assert fonts == {1000 + CONST["gc_font_serif_12"]}
 
 
+def test_the_mod_files_view_lists_the_game_files_and_how_they_are_treated():
+    ui = model(ROWS, panel=3, mfrow=3, vn=2, vsel=1, mfhas=0, typed=b"onc",
+               v0=b"gui\\menu.inc\\oncamera.inc", vc0=b"merge",
+               v1=b"game\\var\\units.cfg", vc1=b"wta")
+    eng = show(ui)
+    lst = win(eng, b"main.wnd.vbox.vfiles")
+    assert lst.items == [(TAB + b"gui\\menu.inc\\oncamera.inc" + TAB + b"merged with other mods", 0),
+                         (TAB + b"game\\var\\units.cfg" + TAB +
+                          b"not merged - the last mod's copy is used", 1)]
+    assert lst.sel == 1
+    bs = buttons(eng)
+    assert bs[b"bmfabout"] == (b"Create about.cfg", True)
+    assert bs[b"bmfcopy"] == (b"Copy into mod", True) and bs[b"bmfback"] == (b"Back", True)
+    head = next(t for t in eng.under(win(eng, b"main.wnd.vbox").handle, "text"))
+    assert head.text.startswith(b"Game files of mods\\Fresh ")
+    eng = show(dict(ui, vsel=-1, mfhas=1))
+    bs = buttons(eng)
+    assert bs[b"bmfabout"][1] is False and bs[b"bmfcopy"][1] is False
+
+
+# ---------------------------------------------------------------- dialogs
+def test_the_confirm_dialog_lists_the_changes_and_the_load_order():
+    ui = model(ROWS, mode=1, confn=2, conf0=b"+ ZoomOut!", conf1=b"- Broken", confon=3,
+               confo0=b"1. MGraphics - Lights", confo1=b"2. ZoomOut!", confo2=b"3. Quartermaster",
+               confordchg=1)
+    eng = show(ui)
+    texts = dict((t.name, t.text) for t in eng.under(win(eng, b"confirm.cwnd").handle, "text"))
+    assert texts[b"ctext"] == b"Apply these changes and restart the game?"
+    assert texts[b"clist"] == b"+ ZoomOut!" + BR + b"- Broken"
+    assert texts[b"colist"] == b"1. MGraphics - Lights" + BR + b"2. ZoomOut!" + BR + \
+        b"3. Quartermaster"
+    assert texts[b"cohead"] == b"Load order (changed):"
+    assert texts[b"cnote"] == b"Enter confirms, Esc cancels."
+    assert buttons(eng, b"confirm")[b"byes"] == (b"Apply", True)
+    assert win(eng, b"confirm").visible and not win(eng, b"notice").visible
+
+
+@pytest.mark.parametrize("rule, head, note", [
+    (0, b"These mods cannot be active together",
+     b"Both mods of each pair replace the same core script."),
+    (1, b"This set of mods cannot be applied",
      b"Their about.cfg rules, or core scripts both of them replace, rule it out:")])
 def test_a_blocked_set_explains_itself_and_cannot_be_applied(rule, head, note):
     ui = model(ROWS, mode=1, confn=0, confon=0, confblk=1, confb0=b"A and B: lib\\unit.script",

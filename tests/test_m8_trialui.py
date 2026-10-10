@@ -71,6 +71,29 @@ def test_apply_of_a_new_mod_waits_for_its_check_and_lists_what_it_refused():
     W.cmd(eng, "apply")
     assert int(eng.key(b"qm_rt", b"trq")) == asks + 1 and eng.key(b"qm_rt", b"trrow") == b"-1"
     assert W.ui(eng, "mode") == b"1" and W.ui(eng, "confblk") == b"1"
+def test_a_check_that_never_ran_is_named_after_five_seconds():
+    # Hands-on, 2026-10-10: the frame hook was dead and the window said
+    # "a moment" for minutes. The pump runs the check now; should it not,
+    # the window says what is wrong and what to do.
+    eng = opened()
+    W.cmd(eng, "select", arg=W.row_of(eng, BROKEN))
+    eng.now = 3000.0
+    eng.set("qm_ui", cmd=b"activate", arg=-1, argside=0, argto=-1, argtext=b"")
+    PAS5.run(eng, "qmUiAct")
+    assert eng.key(b"qm_rt", b"trat") == b"30000"
+    for later, said in ((4.9, b"Still checking the last change; a moment."),
+                        (5.0, b"The check did not run: the game is not running Quartermaster's "
+                              b"part of the main menu. Close the game and start it again; "
+                              b"nothing was changed.")):
+        eng.now = 3000.0 + later
+        eng.set("qm_ui", cmd=b"apply", arg=-1, argside=0, argto=-1, argtext=b"")
+        PAS5.run(eng, "qmUiAct")
+        assert W.ui(eng, "msg") == said and W.ui(eng, "trpend") == b"1"
+    # the answer still ends the wait
+    W.answer_trial(eng)
+    assert W.ui(eng, "trpend") == b"0"
+
+
     assert W.ui(eng, "confb0") == b"gui\\menu.aix does not load: the game would not start"
     assert W.ui(eng, "confbrule") == b"1"
     notes = [W.ui(eng, "conf%d" % k) for k in range(int(W.ui(eng, "confn")))]

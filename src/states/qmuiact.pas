@@ -89,6 +89,7 @@ begin
    begin
       qmUaSig(qmUtSig);
       ParserSetIntValueByKeyByHandle(qmUtRt, 'trq', ParserGetIntValueByKeyByHandle(qmUtRt, 'trq')+1);
+      ParserSetIntValueByKeyByHandle(qmUtRt, 'trat', Floor(_misc_GetRealTime*10));
       ParserSetIntValueByKeyByHandle(qmUtRt, 'trrow', qmUtRow);
       ParserSetValueByKeyByHandle(qmUtRt, 'trsig', qmUtSig);
       ParserSetIntValueByKeyByHandle(qmUtUi, 'trpend', 1);
@@ -215,7 +216,18 @@ if (qmUaCmd='activate') or (qmUaCmd='deactivate') or (qmUaCmd='up') or (qmUaCmd=
 begin
    // The message while the activation check runs.
    ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Still checking the last change; a moment.');
-   qmLog('ui '+qmUaCmd+' waits: the activation check runs');
+   //! The check runs on the next frame, or from the window when no frame
+   //! ticks (qmPump): one still unanswered five seconds after it was asked
+   //! did not run at all, and the window says so instead of "a moment" for
+   //! ever (hands-on, 2026-10-10: minutes of it, DoProgress had not compiled).
+   var qmUaWrt : Integer = ParserSelectByKey('qm_rt');
+   var qmUaWait : Integer = 0;
+   if (qmUaWrt<>0) then
+   qmUaWait := Floor(_misc_GetRealTime*10)-ParserGetIntValueByKeyByHandle(qmUaWrt, 'trat');
+   if (qmUaWait>=50) then
+   // The message when the activation check never ran.
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'The check did not run: the game is not running Quartermaster''s part of the main menu. Close the game and start it again; nothing was changed.');
+   qmLog('ui '+qmUaCmd+' waits: the activation check runs, asked '+IntToStr(qmUaWait)+' tenths ago');
    qmUaCmd := '';
    qmUaDone := True;
 end;

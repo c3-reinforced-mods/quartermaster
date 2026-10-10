@@ -430,12 +430,13 @@ def test_qm_rt_is_only_read_or_extended_with_ui_keys(built):
     # `rs` is read only: a restart notice whose restart is gone is stale.
     # `setsave`, `setsaveseq` (M10): accepted options, written by qmTick;
     # `mf*` (M11): Create mod / about.cfg / Edit game file, done by qmTick;
-    # `tr*` (M8 task 4): the activation check, run by qmTick.
+    # `tr*` (M8 task 4): the activation check, run by qmTick; `trat` is when
+    # it was asked, for the window's own timeout.
     assert keys == {"qmdir", "uiapply", "uiapplyseq", "uiapplyn", "uiapplydir",
                     "uiapplydis", "uiapplychg", "uiregen", "uiapplyordn", "uiapplyord",
                     "uiapplyorder", "rs", "setsave", "setsaveseq", "mfreq", "mffolder",
                     "mftitle", "mftype", "mfexcl", "mfdir", "mftags", "mfcam", "mfrel",
-                    "trq", "trrow", "trsig", "trdone"}
+                    "trq", "trrow", "trsig", "trdone", "trat"}
 
 
 # ---------------------------------------------------------------- the hooks

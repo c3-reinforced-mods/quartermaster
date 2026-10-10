@@ -477,6 +477,11 @@ ParserSetIntValueByKeyByHandle(qmEmUi, 'topi', GetGUIListBoxTopIndex(qmEmHnd));
 qmEmHnd := GetGUIElementIndexByNameParent(qmEmElmname+'.main.wnd.act.active', _gui_GetTop);
 if (qmEmHnd<>0) then
 ParserSetIntValueByKeyByHandle(qmEmUi, 'topa', GetGUIListBoxTopIndex(qmEmHnd));
+//! qmPump before the command and after it: when no frame runs qmTick (a
+//! merged DoProgress that did not compile), what the last command left for
+//! the tick is done before this one is judged, and what this one asks for -
+//! the activation check, an Apply, a save - right after it (qmpump.pas).
+StateMachineExecuteState(qmEmCore, 'qmPump', 0);
 ParserSetValueByKeyByHandle(qmEmUi, 'cmd', qmEmCmd);
 ParserSetIntValueByKeyByHandle(qmEmUi, 'arg', qmEmArg);
 ParserSetIntValueByKeyByHandle(qmEmUi, 'argside', qmEmSide);
@@ -503,6 +508,7 @@ begin
    SetGUIEventStateOnKeyDown('');
    exit;
 end;
+StateMachineExecuteState(qmEmCore, 'qmPump', 0);
 if (ParserGetIntValueByKeyByHandle(qmEmUi, 'close')=1) then
 begin
    // Closing only hides the window: it is a modal over the main menu, which

@@ -65,11 +65,33 @@ requires:
 //!
 //! A write here (the confirm) moves rsdue so the restart still comes at least
 //! 1 s after it.
+//!
+//! The frame hook is a line in a merged state: when that DoProgress does not
+//! compile - a mod it was merged from was switched off outside Quartermaster,
+//! and the start loaded the outputs made with it - nothing runs this state
+//! (hands-on, 2026-10-10: the boot's restart never came and the window's
+//! activation check waited for ever). So every run by the frame hook leaves
+//! the time in qm_rt `tkat`, and qmPump, which the manager window runs, runs
+//! this state itself (qm_rt `pump` = 1) once that time stands still. Such a
+//! run does the work - settings, mod files, the activation check, the
+//! confirm, an Apply - and leaves out what belongs to a frame: the captions
+//! and lines it draws through EventQmManager (the window's event state may be
+//! the one running the pump), the notices and the run switches, and the
+//! restart, which qmPump runs itself, as no later frame would.
 var qmTkRt : Integer = ParserSelectByKey('qm_rt');
 if (qmTkRt=0) then
 exit;
+var qmTkPump : Boolean = (ParserGetIntValueByKeyByHandle(qmTkRt, 'pump')=1);
+if (not qmTkPump) then
+ParserSetIntValueByKeyByHandle(qmTkRt, 'tkat', Floor(_misc_GetRealTime*10));
+// Set by the work below that can take seconds; the time is left again then.
+var qmTkLong : Boolean = False;
 var qmTkUi : Integer = ParserSelectByKey('qm_ui');
-if (qmTkUi<>0) then
+// What a frame draws: none of it in a run by qmPump.
+var qmTkGui : Integer = qmTkUi;
+if (qmTkPump) then
+qmTkGui := 0;
+if (qmTkGui<>0) then
 if (ParserGetIntValueByKeyByHandle(qmTkUi, 'ready')=1) and (ParserGetIntValueByKeyByHandle(qmTkUi, 'renameoff')=0) then
 begin
    var qmTkBtn : Integer = GetGUIElementIndexByNameParent('MainMenu.col1.row1.wnewgame.bmodman.txtbtn', _gui_GetTop);
@@ -81,7 +103,7 @@ begin
       GUIExecuteState('EventQmManager');
    end;
 end;
-if (qmTkUi<>0) then
+if (qmTkGui<>0) then
 if (ParserGetIntValueByKeyByHandle(qmTkUi, 'ready')=1) and (ParserGetIntValueByKeyByHandle(qmTkUi, 'veroff')=0) then
 begin
    var qmTkVer : Integer = GetGUIElementIndexByNameParent('MainMenu.col1.row1.wnewgame.ver', _gui_GetTop);
@@ -92,7 +114,7 @@ begin
       GUIExecuteState('EventQmManager');
    end;
 end;
-if (qmTkUi<>0) then
+if (qmTkGui<>0) then
 if (ParserGetIntValueByKeyByHandle(qmTkUi, 'ready')=1) and (ParserGetIntValueByKeyByHandle(qmTkUi, 'lobbyoff')=0) then
 begin
    var qmTkLob : Integer = GetGUIElementIndexByNameParent('InternetShell.backgroundparent.background', _gui_GetTop);
@@ -116,7 +138,7 @@ end;
 //! start the guard restarted. On the first main-menu frame outside a map with
 //! the manager's screens ready, no boot running and no restart pending, the
 //! manager opens with the notice on top (qm_ui gdopen; qmUiAct mode 3) - once.
-if (qmTkUi<>0) then
+if (qmTkGui<>0) then
 if (ParserGetIntValueByKeyByHandle(qmTkRt, 'gdshow')=1) and (ParserGetIntValueByKeyByHandle(qmTkUi, 'ready')=1) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'busy')=0) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'rs')=0) and (gMap.gamestage=gc_map_gamestage_none) then
 begin
    ParserSetIntValueByKeyByHandle(qmTkRt, 'gdshow', 0);
@@ -147,7 +169,7 @@ end;
 //! 236). So on a main-menu frame outside a map with no boot or restart under
 //! way, a notice still up whose window (QmManager, misc.script:1931-1932) is
 //! gone or hidden is drawn again; OK or close end mode 3.
-if (qmTkUi<>0) then
+if (qmTkGui<>0) then
 if (ParserGetIntValueByKeyByHandle(qmTkUi, 'mode')=3) and (ParserGetIntValueByKeyByHandle(qmTkUi, 'ready')=1) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'busy')=0) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'rs')=0) and (gMap.gamestage=gc_map_gamestage_none) then
 if (GetGUIElementIndexByNameParent('MainMenu', _gui_GetTop)<>0) then
 begin
@@ -170,7 +192,7 @@ end;
 //! restart pending and no Apply, then 15 s on the main menu (the window is
 //! captured meanwhile) and closes the manager first.
 var qmTkSk : Integer = ParserGetIntValueByKeyByHandle(qmTkRt, 'skphase');
-if (qmTkSk>0) and (qmTkSk<9) then
+if (qmTkSk>0) and (qmTkSk<9) and (not qmTkPump) then
 begin
    var qmTkSkNow : Integer = Floor(_misc_GetRealTime*10);
    var qmTkSkT : Integer = ParserGetIntValueByKeyByHandle(qmTkRt, 'skt');
@@ -215,6 +237,7 @@ exit;
 if (ParserGetIntValueByKeyByHandle(qmTkRt, 'setsave')=1) then
 begin
    ParserSetIntValueByKeyByHandle(qmTkRt, 'setsave', 0);
+   qmTkLong := True;
    StateMachineExecuteState(GetTriggerManagerStateMachineHandle('qm_core'), 'qmSetSave', 0);
 end;
 //! Create mod / Create about.cfg / Edit game file asked in the manager
@@ -222,6 +245,7 @@ end;
 //! is open, is drawn again so its message line says what happened.
 if (ParserGetValueByKeyByHandle(qmTkRt, 'mfreq')<>'') then
 begin
+   qmTkLong := True;
    StateMachineExecuteState(GetTriggerManagerStateMachineHandle('qm_core'), 'qmModFiles', 0);
    var qmTkMw : Integer = GetGUIElementIndexByNameParent('QmManager', _gui_GetTop);
    if (qmTkMw<>0) then
@@ -235,6 +259,7 @@ end;
 if (ParserGetIntValueByKeyByHandle(qmTkRt, 'trq')>ParserGetIntValueByKeyByHandle(qmTkRt, 'trdone')) then
 begin
    ParserSetIntValueByKeyByHandle(qmTkRt, 'trdone', ParserGetIntValueByKeyByHandle(qmTkRt, 'trq'));
+   qmTkLong := True;
    var qmTkTc : Integer = GetTriggerManagerStateMachineHandle('qm_core');
    StateMachineExecuteState(qmTkTc, 'qmTrial', 0);
    ParserSetValueByKeyByHandle(ParserSelectByKey('qm_ui'), 'cmd', 'trialdone');
@@ -270,6 +295,11 @@ begin
    StateMachineExecuteState(GetTriggerManagerStateMachineHandle('qm_core'), 'qmSettings', 0);
    qmLog('tick: the LAN session is over; the settings of this machine are back');
 end;
+//! A trial generation takes seconds, and a click can come before the next
+//! frame: the heartbeat says when this run ended, so qmPump does not take
+//! the time the work took for a tick that stopped.
+if (qmTkLong) and (not qmTkPump) then
+ParserSetIntValueByKeyByHandle(qmTkRt, 'tkat', Floor(_misc_GetRealTime*10));
 if (ParserGetIntValueByKeyByHandle(qmTkRt, 'tick')=0) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'uiapply')=0) then
 exit;
 var qmTkCore : Integer = GetTriggerManagerStateMachineHandle('qm_core');
@@ -296,8 +326,10 @@ begin
    StateMachineExecuteState(qmTkCore, 'qmBoot', 0);
    ParserSetValueByKeyByHandle(qmTkRt, 'runmode', '');
    qmTkNow := Floor(_misc_GetRealTime*10);
+   if (not qmTkPump) then
+   ParserSetIntValueByKeyByHandle(qmTkRt, 'tkat', qmTkNow);
 end;
-if (ParserGetIntValueByKeyByHandle(qmTkRt, 'rs')=1) then
+if (ParserGetIntValueByKeyByHandle(qmTkRt, 'rs')=1) and (not qmTkPump) then
 begin
    var qmTkDue : Integer = ParserGetIntValueByKeyByHandle(qmTkRt, 'rsdue');
    if (qmTkNow>qmTkDue+600) then
