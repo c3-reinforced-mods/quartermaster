@@ -170,7 +170,12 @@ setting = <id>;<type>;<default>;<label>[;<extra>][;<scope>]
   safe choice. Checked in the Polish game the same day: a name in cp1250
   reads right, the same name in UTF-8 shows as its bytes read as cp1250
   ("ZaĹĽĂłĹ‚Ä‡" for "Zażółć"); a label in a player's language is readable
-  only in that language's code page.
+  only in that language's code page. Keep it short: the window gives a label
+  two lines of its column, about 60 characters each (65 of an English label
+  filled the column in the hands-on check of 2026-10-10), breaks it at a
+  space, and cuts what the second line cannot hold with `...`. A `host`
+  setting's label gets " (the host decides in multiplayer)" added, which
+  counts too.
 - `scope`: `local` (the default) or `host`. A `host` setting is the one the
   host decides in a LAN game: while the room is open the host's
   Quartermaster sends its values of every `host` setting of the loaded mods

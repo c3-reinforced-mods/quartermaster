@@ -60,6 +60,8 @@ class Screen(PAS5.Engine):
         PAS5.Engine.__init__(self)
         self.els = {TOP: El(TOP, "top", b"", 0)}
         self.urls, self.did = [], []
+        #: (font, text) of every width the state measured
+        self.measured = []
         for name, value in CONST.items():
             self.natives[name] = (lambda v: (lambda: v))(value)
 
@@ -173,7 +175,10 @@ class Screen(PAS5.Engine):
     # elements the state makes
     def n__gui_CreateImageActive(self, name, parent, material, hal, val, x, y, w, h, tag, event,
                                  hint, update):
-        return self._add("image", name, parent, tag=tag, w=w, h=h)
+        h_ = self._add("image", name, parent, tag=tag, w=w, h=h)
+        self.els[h_].x, self.els[h_].y = x, y
+        self.els[h_].hint, self.els[h_].event = hint, event
+        return h_
 
     def n__gui_CreateMainWindow(self, name, parent, hal, val, x, y, w, h, skin, update):
         h_ = self._add("window", name, parent, w=w, h=h)
@@ -229,7 +234,11 @@ class Screen(PAS5.Engine):
     def n_qmxuiconstfont(self):
         return PAS.Arr(0, [1000 + k for k in range(32)])
 
+    def n_qmxuiconstfontstyle(self):
+        return PAS.Arr(0, [b"<f%d>" % k for k in range(32)])
+
     def n_GetGUIElementFontTextRect(self, font, text, w, h):
+        self.measured.append((font, text))
         lines = text.split(BR)
         w.v, h.v = CHAR_W * max(len(l) for l in lines), LINE_H * len(lines)
 
@@ -274,14 +283,20 @@ def put(eng, parser, keys):
     return h
 
 
+def window_code():
+    """ShowQmManager's lines, the record fields the interpreter does not
+    have made natives (gUIConst.font, gUIConst.fontstyle)."""
+    return [l.replace(b"gUIConst.font[", b"qmxuiconstfont[")
+             .replace(b"gUIConst.fontstyle[", b"qmxuiconstfontstyle[")
+            for l in PAS5.sources()["showqmmanager"]]
+
+
 def show(ui, rt=None, report=None, answer=True, takes_open=True):
     """ShowQmManager over qm_ui = `ui` (and qm_rt, qm_report); the event state
     answers the ping unless `answer` is False, the controller takes `open`
     (clears cmd) unless `takes_open` is False."""
     eng = Screen()
-    code = [l.replace(b"gUIConst.font[", b"qmxuiconstfont[")
-            for l in PAS5.sources()["showqmmanager"]]
-    eng.states["showqmmanager"] = PAS.State(code, eng)
+    eng.states["showqmmanager"] = PAS.State(window_code(), eng)
     for name, keys in ((b"qm_ui", ui), (b"qm_rt", rt), (b"qm_report", report)):
         if keys is not None:
             put(eng, name, keys)
@@ -507,9 +522,9 @@ def test_the_options_view_draws_each_setting_by_its_type():
     assert texts[b"olb0"] == b"Setting 0"
     assert texts[b"oval0"] == G + b"Off" + D                     # differs from the stored one
     assert texts[b"olb1"] == b"Setting 1 (the host decides in multiplayer)"
-    # 410 wide at 8 per byte: 48 bytes and `...`
-    assert texts[b"olb2"] == (b"Camera speed when the mouse wheel scrolls (the host decides "
-                              b"in multiplayer)")[:48] + b"..."
+    # 410 wide at 8 per byte: 51 bytes a line, broken at the last space before
+    assert texts[b"olb2"] == (b"Camera speed when the mouse wheel scrolls (the host" + BR +
+                              b"decides in multiplayer)")
     assert texts[b"oval3"] == b"press a key..."
     assert b"oval4" not in texts                                # the text box is drawn instead
     assert win(eng, b"obox.otext").text == b"abc" and win(eng, b"obox").visible
@@ -569,6 +584,88 @@ def test_the_confirm_dialog_lists_the_changes_and_the_load_order():
     (0, b"These mods cannot be active together",
      b"Both mods of each pair replace the same core script."),
     (1, b"This set of mods cannot be applied",
+def options(labels):
+    """The Options view over bool settings with `labels`; {name: element} of
+    its label texts, and the engine."""
+    ui = model(ROWS, panel=2, opt=1, optn=len(labels), optpg=0, optcap=-1, optsel=-1)
+    for k, label in enumerate(labels):
+        ui.update({"oty%d" % k: b"bool", "olb%d" % k: label, "ov%d" % k: b"1",
+                   "ovs%d" % k: b"1"})
+    eng = show(ui)
+    opts = win(eng, b"main.wnd.opts")
+    return dict((t.name, t) for t in eng.under(opts.handle, "text")
+                if t.name.startswith(b"olb")), eng
+
+
+def test_a_long_label_takes_a_second_line_and_is_cut_only_after_it():
+    # Hands-on, 2026-10-10: three labels of Reinforced - Core lost
+    # their ends at the value column, without a `...`.
+    fleet = (b"Fleet in a new skirmish (game keeps all ships, nowarships keeps "
+             b"transports and fishing boats, noships keeps none of them at all)")
+    labels, eng = options([b"Record replays of single player games", fleet,
+                           b"A" * 60, b"Short one"])
+    lh = LINE_H + 3
+    one, two, word = labels[b"olb0"], labels[b"olb1"], labels[b"olb2"]
+    assert one.text == b"Record replays of single player games"
+    assert (one.y, one.h) == (14, 36)
+    # 51 bytes fit a line: the break is at the last space before, the second
+    # line keeps 48 bytes and says `...`
+    first = b"Fleet in a new skirmish (game keeps all ships,"
+    rest = fleet[len(first) + 1:]
+    assert two.text == first + BR + rest[:48] + b"..."
+    assert all(CHAR_W * len(l) <= 410 for l in two.text.split(BR))
+    # two lines around the middle of the row, the height of two list lines
+    assert (two.x, two.w) == (16, 420)
+    assert (two.y, two.h) == (14 + 48 + 18 - lh, 2 * lh + 4)
+    # a label without a space cannot break: one line, cut
+    assert word.text == b"A" * 48 + b"..." and (word.y, word.h) == (14 + 2 * 48, 36)
+    assert labels[b"olb3"].y == 14 + 3 * 48
+
+
+def test_a_cut_label_says_the_rest_in_a_hint_and_only_a_cut_one():
+    # Two lines first; what they cannot hold is in a hint over the label, as
+    # vanilla hangs one on an icon (a blank image, no event state).
+    fleet = (b"Fleet in a new skirmish (game keeps all ships, nowarships keeps "
+             b"transports and fishing boats, noships keeps none of them at all)")
+    camera = b"Camera distance (game is the height of the game, 58, far is 80, very far is 100)"
+    labels, eng = options([b"Short one", fleet, b"A" * 60, camera])
+    opts = win(eng, b"main.wnd.opts")
+    hints = dict((i.name, i) for i in eng.under(opts.handle, "image")
+                 if i.name.startswith(b"olh"))
+    assert sorted(hints) == [b"olh1", b"olh2"]
+    assert BR in labels[b"olb3"].text and b"..." not in labels[b"olb3"].text
+    style = b"<f%d>" % CONST["gc_font_serif_13"] + W
+    assert hints[b"olh1"].hint == style + fleet and hints[b"olh2"].hint == style + b"A" * 60
+    # over the label and not past it: the value and the buttons stay free
+    h = hints[b"olh1"]
+    assert (h.x, h.w) == (16, 420) and (h.y, h.h) == (14 + 48 - 4, 44)
+    assert h.event == b"" and h.tag == 0
+
+
+def test_a_hint_is_wrapped_at_the_labels_width(monkeypatch):
+    monkeypatch.setattr(Screen, "n_GetGUIWrappedTextByFont", _wrapped)
+    labels, eng = options([b"Camera on W A S D (W A S D move the camera like the arrow keys, "
+                           b"the hotkeys on A, S and D work as Shift+A, Shift+S and Shift+D)"])
+    opts = win(eng, b"main.wnd.opts")
+    hint = next(i for i in eng.under(opts.handle, "image") if i.name == b"olh0").hint
+    body = hint[len(b"<f%d>" % CONST["gc_font_serif_13"] + W):]
+    assert BR in body and all(CHAR_W * len(l) <= 420 for l in body.split(BR))
+    assert body.replace(BR, b" ").endswith(b"Shift+S and Shift+D)")
+
+
+def test_a_label_is_measured_in_the_font_it_is_drawn_in():
+    # Until 0.1.4 the Options view measured in serif 12 and drew in serif 13,
+    # so what it measured as fitting did not fit.
+    labels, eng = options([b"Automatic map size in a new skirmish (follows the number of "
+                           b"players)"])
+    fonts = set(f for f, t in eng.measured if t.startswith(b"Automatic"))
+    assert fonts == {1000 + CONST["gc_font_serif_13"]}
+    eng = show(model([dict(name=b"Cannons Attack Automatically", dir=b"mods\\c", org=b"Local",
+                           st=b"OK")]))
+    fonts = set(f for f, t in eng.measured if t.startswith(b"Cannons"))
+    assert fonts == {1000 + CONST["gc_font_serif_12"]}
+
+
      b"Their about.cfg rules, or core scripts both of them replace, rule it out:")])
 def test_a_blocked_set_explains_itself_and_cannot_be_applied(rule, head, note):
     ui = model(ROWS, mode=1, confn=0, confon=0, confblk=1, confb0=b"A and B: lib\\unit.script",

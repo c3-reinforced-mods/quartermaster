@@ -634,7 +634,17 @@ is enabled for a selected row with `abs<i>` > 0.
 
 - **The view** (`panel` = 2) replaces the lists, ten settings a page
   (`optpg`; Previous / Next when there are more): label, the edited value -
-  green while it differs from the stored one - and the buttons of its type:
+  green while it differs from the stored one - and the buttons of its type
+  (below). A label that does not fit its column takes a second line: broken
+  at the last space that fits, and what the second line cannot hold is cut
+  with `...` (qmSmLabel, measured in the font it is drawn in; until 0.1.4 a
+  label had one line, measured in a smaller font than it was drawn in, so a
+  long one lost its end at the value column without a `...` - hands-on,
+  2026-10-10). What a cut label leaves out is in a hint over it (`olh<k>`:
+  a blank image with a hint and no event state, as vanilla hangs a hint on
+  an icon, showaiassistantadvices.inc:309; the whole label, wrapped at the
+  label's width, in the style of showaiassistantsettings.inc:98). The rows
+  are 48 apart for the second line. The buttons:
   bool Switch; int and float `-` / `+` by the declared step within the range
   (fixed-point: the value always has the declared places, src/lib/qmnum.pas);
   choice `<` / `>`; key Change; text Edit, which shows a text box in the

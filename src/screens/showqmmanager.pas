@@ -130,22 +130,82 @@ begin
    _gui_CreateText('txtbtn', Result, qmSbText, gc_halParentMiddle, gc_valParentMiddle, 0, 0, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_15, qmSmGrey, qmSmBupdate);
 end;
 
-//! A name cut to what a list column shows: measured in the column's font
-//! (GetGUIElementFontTextRect, as qmSmTextPanel measures its text) and cut
-//! with `...` until it fits, so it never runs into the next column (hands-on
-//! check: "Cannons Attack Automatically" ran into "Workshop").
-procedure qmSmFit(const qmSfText : String; const qmSfW : Integer; var qmSfOut : String);
+//! A name cut to what a column shows: measured in the font it is drawn in
+//! (qmSfFont, an index of gUIConst.font; GetGUIElementFontTextRect, as
+//! qmSmTextPanel measures its text) and cut with `...` until it fits, so it
+//! never runs into the next column (hands-on check: "Cannons Attack
+//! Automatically" ran into "Workshop").
+procedure qmSmFit(const qmSfText : String; const qmSfW : Integer; const qmSfFont : Integer; var qmSfOut : String);
 begin
    var qmSfTw : Integer;
    var qmSfTh : Integer;
    var qmSfN : Integer = StrLength(qmSfText);
    qmSfOut := qmSfText;
-   GetGUIElementFontTextRect(gUIConst.font[gc_font_serif_12], qmSfOut, qmSfTw, qmSfTh);
+   GetGUIElementFontTextRect(gUIConst.font[qmSfFont], qmSfOut, qmSfTw, qmSfTh);
    while (qmSfTw>qmSfW) and (qmSfN>1) do
    begin
       qmSfN := qmSfN-1;
       qmSfOut := SubStr(qmSfText, 1, qmSfN)+'...';
-      GetGUIElementFontTextRect(gUIConst.font[gc_font_serif_12], qmSfOut, qmSfTw, qmSfTh);
+      GetGUIElementFontTextRect(gUIConst.font[qmSfFont], qmSfOut, qmSfTw, qmSfTh);
+   end;
+end;
+
+//! A setting's label for the Options view: as it is when it fits its column,
+//! else broken at the last space that still fits, with the rest on a second
+//! line, cut with `...` when that does not fit either. qmSlLines says how
+//! many lines it took. Until 0.1.4 a label had one line, measured in serif 12
+//! and drawn in serif 13: a long one lost its end and the `...` with it
+//! (hands-on, 2026-10-10: "Fall of the capital in a new skirmish (the first
+//! town centre fall", then the value). The break is made here from measured
+//! widths, so the number of lines is known and not read out of a wrapped text.
+//! qmSlCut says whether anything was left out: the caller then hangs the
+//! whole label on it as a hint.
+procedure qmSmLabel(const qmSlText : String; const qmSlW : Integer; const qmSlFont : Integer; var qmSlLines : Integer; var qmSlCut : Boolean; var qmSlOut : String);
+begin
+   var qmSlTw : Integer;
+   var qmSlTh : Integer;
+   var qmSlN : Integer = StrLength(qmSlText);
+   var qmSlI : Integer = 2;
+   var qmSlBreak : Integer = 0;
+   var qmSlGo : Boolean = True;
+   var qmSlHead : String;
+   var qmSlTail : String;
+   qmSlLines := 1;
+   qmSlCut := False;
+   qmSlOut := qmSlText;
+   GetGUIElementFontTextRect(gUIConst.font[qmSlFont], qmSlOut, qmSlTw, qmSlTh);
+   if (qmSlTw>qmSlW) then
+   begin
+      // The last space with a start that fits; the first start that does not
+      // fit ends the search, every later one is longer.
+      while (qmSlGo) and (qmSlI<=qmSlN) do
+      begin
+         if (SubStr(qmSlText, qmSlI, 1)=' ') then
+         begin
+            qmSlHead := SubStr(qmSlText, 1, qmSlI-1);
+            GetGUIElementFontTextRect(gUIConst.font[qmSlFont], qmSlHead, qmSlTw, qmSlTh);
+            if (qmSlTw<=qmSlW) then
+            qmSlBreak := qmSlI
+            else
+            qmSlGo := False;
+         end;
+         qmSlI := qmSlI+1;
+      end;
+      if (qmSlBreak=0) then
+      begin
+         // No space to break at: one line, cut.
+         qmSmFit(qmSlText, qmSlW, qmSlFont, qmSlOut);
+         qmSlCut := True;
+      end
+      else
+      begin
+         qmSlHead := SubStr(qmSlText, 1, qmSlBreak-1);
+         qmSlTail := SubStr(qmSlText, qmSlBreak+1, qmSlN-qmSlBreak);
+         qmSmFit(qmSlTail, qmSlW, qmSlFont, qmSlOut);
+         qmSlCut := (qmSlOut<>qmSlTail);
+         qmSlOut := qmSlHead+gc_gui_breakline+qmSlOut;
+         qmSlLines := 2;
+      end;
    end;
 end;
 
@@ -402,18 +462,35 @@ begin
    for qmSmOr:=0 to 9 do
    begin
       qmSmOk := qmSmOpg*10+qmSmOr;
+   var qmSmOll : Integer;
+   var qmSmOcut : Boolean;
       if (qmSmOk<qmSmOn) then
       begin
          qmSmOs := IntToStr(qmSmOk);
          qmSmOty := ParserGetValueByKeyByHandle(qmSmUi, 'oty'+qmSmOs);
          qmSmOval := ParserGetValueByKeyByHandle(qmSmUi, 'ov'+qmSmOs);
-         qmSmOy := 14+qmSmOr*44;
+         qmSmOy := 14+qmSmOr*48;
          var qmSmOlt : String = ParserGetValueByKeyByHandle(qmSmUi, 'olb'+qmSmOs);
          // The mark of a setting the host decides in multiplayer.
          if (ParserGetValueByKeyByHandle(qmSmUi, 'osc'+qmSmOs)='host') then
          qmSmOlt := qmSmOlt+' (the host decides in multiplayer)';
-         qmSmFit(qmSmOlt, 410, qmSmOlb);
-         _gui_CreateText('olb'+qmSmOs, qmSmOBg, qmSmOlb, gc_halParentLeft, gc_valParentTop, 16, qmSmOy, 420, 36, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
+         qmSmLabel(qmSmOlt, 410, gc_font_serif_13, qmSmOll, qmSmOcut, qmSmOlb);
+         if (qmSmOll=1) then
+         _gui_CreateText('olb'+qmSmOs, qmSmOBg, qmSmOlb, gc_halParentLeft, gc_valParentTop, 16, qmSmOy, 420, 36, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate)
+         else
+         // Two lines around the row's middle, each qmSmLh high from the top,
+         // as the guard's notice lays out its list.
+         _gui_CreateText('olb'+qmSmOs, qmSmOBg, qmSmOlb, gc_halParentLeft, gc_valParentTop, 16, qmSmOy+18-qmSmLh, 420, qmSmLh*2+4, gc_halLeft, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
+         //! What a cut label leaves out is in its hint: a blank image over the
+         //! label with a hint and no event state, as vanilla hangs a hint on an
+         //! icon (showaiassistantadvices.inc:309; gui.script:236-275), in the
+         //! style of vanilla's longer hints (showaiassistantsettings.inc:98) and
+         //! wrapped at the label's own width.
+         if (qmSmOcut) then
+         begin
+            qmSmText := gUIConst.fontstyle[gc_font_serif_13]+gc_font_color_white+GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmOlt, 420);
+            _gui_CreateImageActive('olh'+qmSmOs, qmSmOBg, qmSmNul, gc_halParentLeft, gc_valParentTop, 16, qmSmOy-4, 420, 44, 0, qmSmNul, qmSmText, qmSmBupdate);
+         end;
          if (qmSmOty='bool') then
          begin
             if (qmSmOval='1') then
@@ -551,7 +628,7 @@ begin
          // A colour tag lasts into the next cell: each coloured cell ends with the
          // default colour again (showinternetshell.inc:821).
          // The name column is 180 wide (the third tab above).
-         qmSmFit(qmSmName, 172, qmSmShort);
+         qmSmFit(qmSmName, 172, gc_font_serif_12, qmSmShort);
          GUIListBoxAddItem(qmSmInst, #9+qmSmMark+gc_font_color_default+#9+qmSmShort+#9+ParserGetValueByKeyByHandle(qmSmUi, 'org'+qmSmS)+#9+qmSmSt+gc_font_color_default, qmSmI);
          if (qmSmI=qmSmSel) and (qmSmSide=0) then
          SetGUIListBoxItemIndexSilent(qmSmInst, qmSmRow);
@@ -622,7 +699,7 @@ begin
          else
          qmSmSt := gc_font_color_lightgrey+qmSmSt;
          // The name column is 230 wide (the fourth tab above).
-         qmSmFit(qmSmName, 222, qmSmShort);
+         qmSmFit(qmSmName, 222, gc_font_serif_12, qmSmShort);
          GUIListBoxAddItem(qmSmAct, #9+IntToStr(qmSmRow+1)+#9+qmSmMark+gc_font_color_default+#9+qmSmShort+#9+qmSmSt+gc_font_color_default, qmSmI);
          if (qmSmI=qmSmSel) and (qmSmSide=1) then
          begin
