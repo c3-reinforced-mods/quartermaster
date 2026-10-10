@@ -109,6 +109,14 @@ def lines(eng):
             for k in range(int(eng.key(b"qm_ui", b"trn")))]
 
 
+def later(eng):
+    """The check's LATER lines: what only a start with the row's own global
+    scripts loaded can judge - logged and counted, no part of the status."""
+    out = [l.split(b"trial LATER ", 1)[1] for l in eng.log if b"trial LATER " in l]
+    assert eng.key(b"qm_ui", b"trlater") == b"%d" % len(out)
+    return out
+
+
 def test_a_merge_that_does_not_compile_refuses_the_mod_that_joins_it():
     eng = engine(pe=[1, 1, 0, 0, 1], en=[1, 0, 0, 0, 1], compiles=[b"oncamera.inc"])
     before, after = run(eng, 1)
@@ -126,6 +134,36 @@ def test_a_merge_that_does_not_compile_refuses_the_mod_that_joins_it():
     assert (eng.key(b"qm_ui", b"trrow"), eng.key(b"qm_ui", b"trsig")) == (b"1", b"s")
 
 
+def test_a_merge_with_a_mod_that_brings_its_own_global_scripts_is_not_certain():
+    # Hands-on, 2026-10-10: Reinforced - Core, switched off, could not be
+    # activated again - its DoProgress calls its own library, which a game
+    # running without it has not loaded, and the merge with the hook was a
+    # FAIL. Libby (row 3) brings unit.script and joins the merge here.
+    eng = engine(pe=[1, 0, 0, 1, 1], en=[1, 0, 0, 0, 1], compiles=[b"hotkeysettings.inc"])
+
+    def plan():
+        h = eng.named[b"qm_plan"]
+        eng.nodes[h].keys = {}
+        eng.set("qm_plan", n=2, path0=RS, act0=b"merge-inc", prov0=b"0;3", win0=b"3",
+                path1=HK, act1=b"skip", prov1=b"3", win1=b"3")
+    eng.states["qmplan"] = PAS5.Fake(plan)
+    for x in (b"fallback", b"none"):
+        eng.states["qmgenerate"] = PAS5.Fake(
+            (lambda x: lambda: eng.set("qm_gen", status=b"ok", s0=b"FAIL", x0=x, s1=b"OK"))(x))
+        del eng.log[:]
+        run(eng, 3)
+        # no warning either: the mod may be fine, and the next start tells
+        assert eng.key(b"qm_ui", b"trst") == b"OK" and lines(eng) == []
+        assert later(eng) == [RS + b" does not compile merged with the global scripts "
+                              b"loaded now; a mod in it brings its own, so it is built again "
+                              b"at the next start"]
+    # a data merge that was refused is no question of scripts
+    eng.states["qmgenerate"] = PAS5.Fake(lambda: eng.set(
+        "qm_gen", status=b"ok", s0=b"FAIL", x0=b"datafail", e0=b"two records", s1=b"OK"))
+    run(eng, 3)
+    assert lines(eng) == [(b"FAIL", RS + b": two records")]
+
+
 def test_an_own_file_that_does_not_compile_is_a_fail():
     eng = engine(pe=[1, 1, 0, 0, 1], en=[1, 0, 0, 0, 1],
                  files=[BROKEN + b"\\data\\" + DOC])
@@ -140,16 +178,18 @@ def test_a_row_the_check_is_not_about_is_not_blamed():
     eng = engine(pe=[1, 1, 0, 1, 1], en=[1, 1, 0, 0, 1])
     run(eng, 3)
     # Libby brings its own global scripts: its file that does not compile
-    # with the loaded ones is a WARN.
-    assert eng.key(b"qm_ui", b"trst") == b"WARN"
-    assert [t for t, _x in lines(eng)] == [b"WARN"]
-    assert lines(eng)[0][1].startswith(HK + b" does not compile with the global scripts")
+    # with the loaded ones is for the next start to judge. Until 0.1.4 that
+    # was a WARN: Reinforced - Core, which is fine, showed WARN with 24 of
+    # them and OK after the restart (hands-on, 2026-10-10).
+    assert eng.key(b"qm_ui", b"trst") == b"OK" and lines(eng) == []
+    assert len(later(eng)) == 1
+    assert later(eng)[0].startswith(HK + b" does not compile with the global scripts")
 
 
 def test_the_check_of_apply_is_about_every_row_it_switches_on():
     eng = engine(pe=[1, 1, 0, 1, 1], en=[1, 0, 0, 0, 1], compiles=[b"oncamera.inc"])
     run(eng, -1)
-    assert [t for t, _x in lines(eng)] == [b"FAIL", b"WARN"]
+    assert [t for t, _x in lines(eng)] == [b"FAIL"] and len(later(eng)) == 1
 
 
 def test_the_mods_own_check_sees_the_pending_set_and_can_refuse():
@@ -179,16 +219,17 @@ def test_rows_that_are_not_the_boots_skip_the_check():
 
 def test_global_scripts_are_compiled_against_the_loaded_ones_but_classes():
     # Libby brings lib\unit.script and lib\classes.script: unit.script is
-    # validated as a script (vs = 1) and does not compile - a WARN, since it
-    # may need the mod's own other scripts; classes.script cannot be compiled
-    # in a running game at all (probe cls-111839) - a WARN that says so.
+    # validated as a script (vs = 1) and does not compile - for the next
+    # start to judge, since it may need the mod's own other scripts;
+    # classes.script cannot be compiled in a running game at all (probe
+    # cls-111839), and a line says so. Neither is a warning.
     eng = engine(pe=[1, 0, 0, 1, 1], en=[1, 0, 0, 0, 1], compiles=[b"hotkeysettings.inc"])
     eng.set("qm_glob", gl3=b"|lib\\unit.script|lib\\classes.script|")
     run(eng, 3)
     assert eng.seen["own"] == [PAS5.Engine.APP + LIBBY + b"\\data\\" + HK,
                                PAS5.Engine.APP + LIBBY + b"\\data\\scripts\\lib\\unit.script"]
     assert eng.seen["vs"] == [b"0", b"1"]
-    assert [t for t, _x in lines(eng)] == [b"WARN", b"WARN"]
-    texts = [x for _t, x in lines(eng)]
+    assert eng.key(b"qm_ui", b"trst") == b"OK" and lines(eng) == []
+    texts = later(eng)
     assert texts[0] == b"scripts\\lib\\classes.script is not checked: a running game cannot compile it"
     assert texts[1].startswith(b"scripts\\lib\\unit.script does not compile with the global scripts")

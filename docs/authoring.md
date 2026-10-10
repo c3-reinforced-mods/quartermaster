@@ -92,9 +92,13 @@ a Workshop mod that has no about.cfg by its number. Quartermaster itself is
   mods it would join, in the running game and before any restart: every file
   it would be merged into must compile, its own `.inc` files the game would
   load as they are must compile (with your own global scripts in
-  `data\scripts\lib\` this is only a WARN, since the scripts loaded while the
-  check runs are not yours), and a `gui\menu.aix` of yours must load. A FAIL
-  keeps the mod inactive; the window says why. Your global scripts are
+  `data\scripts\lib\` this is no failure and no warning, only counted and
+  judged at the next start, since the scripts loaded while the
+  check runs are not yours - and for the same reason a file of yours that
+  Quartermaster merges or hooks and that does not compile in the check is
+  treated the same then: it is built again at the first start with your scripts
+  loaded, which costs the player one more restart), and a `gui\menu.aix` of
+  yours must load. A FAIL keeps the mod inactive; the window says why. Your global scripts are
   compiled against the ones loaded while the check runs - only a WARN, for
   the same reason - except `classes.script`, which a running game cannot
   compile at all. A key setting whose key another key setting of your mod

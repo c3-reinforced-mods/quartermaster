@@ -40,6 +40,20 @@ def test_a_mod_the_check_passes_stays_active():
     assert W.ui(eng, "msg").startswith(b"Checked: ")
 
 
+def test_what_only_the_next_start_can_judge_is_said_without_a_warning():
+    # Hands-on, 2026-10-10: Reinforced - Core showed WARN for 24 files that
+    # need its own scripts, then OK after the restart.
+    eng = opened()
+    broken = W.row_of(eng, BROKEN)
+    W.cmd(eng, "select", arg=broken)
+    eng.set("qm_ui", trlater=24)
+    W.cmd(eng, "activate")
+    assert W.ui(eng, "pe%d" % broken) == b"1" and W.ui(eng, "tck%d" % broken) == b"OK"
+    assert W.ui(eng, "msg") == (b"Checked: QMTestBroken works with the active mods. 24 of its "
+                               b"files use its own scripts and are checked when the game "
+                               b"restarts.")
+
+
 def test_nothing_changes_the_pending_set_while_a_check_is_asked():
     eng = opened()
     broken = W.row_of(eng, BROKEN)
@@ -57,20 +71,6 @@ def test_nothing_changes_the_pending_set_while_a_check_is_asked():
     assert W.ui(eng, "pe%d" % broken) == b"0"
 
 
-def test_apply_of_a_new_mod_waits_for_its_check_and_lists_what_it_refused():
-    eng = opened()
-    broken = W.row_of(eng, BROKEN)
-    W.cmd(eng, "select", arg=broken)
-    W.cmd(eng, "activate")
-    assert W.ui(eng, "pe%d" % broken) == b"1"
-    # Apply asks the check of every mod it switches on (row -1); the answer
-    # runs Apply again, and the dialog refuses with the check's FAIL line.
-    eng.trial = (b"FAIL", [(b"FAIL", b"gui\\menu.aix does not load: the game would not "
-                                     b"start"), (b"WARN", b"a note")])
-    asks = int(eng.key(b"qm_rt", b"trq"))
-    W.cmd(eng, "apply")
-    assert int(eng.key(b"qm_rt", b"trq")) == asks + 1 and eng.key(b"qm_rt", b"trrow") == b"-1"
-    assert W.ui(eng, "mode") == b"1" and W.ui(eng, "confblk") == b"1"
 def test_a_check_that_never_ran_is_named_after_five_seconds():
     # Hands-on, 2026-10-10: the frame hook was dead and the window said
     # "a moment" for minutes. The pump runs the check now; should it not,
@@ -94,6 +94,20 @@ def test_a_check_that_never_ran_is_named_after_five_seconds():
     assert W.ui(eng, "trpend") == b"0"
 
 
+def test_apply_of_a_new_mod_waits_for_its_check_and_lists_what_it_refused():
+    eng = opened()
+    broken = W.row_of(eng, BROKEN)
+    W.cmd(eng, "select", arg=broken)
+    W.cmd(eng, "activate")
+    assert W.ui(eng, "pe%d" % broken) == b"1"
+    # Apply asks the check of every mod it switches on (row -1); the answer
+    # runs Apply again, and the dialog refuses with the check's FAIL line.
+    eng.trial = (b"FAIL", [(b"FAIL", b"gui\\menu.aix does not load: the game would not "
+                                     b"start"), (b"WARN", b"a note")])
+    asks = int(eng.key(b"qm_rt", b"trq"))
+    W.cmd(eng, "apply")
+    assert int(eng.key(b"qm_rt", b"trq")) == asks + 1 and eng.key(b"qm_rt", b"trrow") == b"-1"
+    assert W.ui(eng, "mode") == b"1" and W.ui(eng, "confblk") == b"1"
     assert W.ui(eng, "confb0") == b"gui\\menu.aix does not load: the game would not start"
     assert W.ui(eng, "confbrule") == b"1"
     notes = [W.ui(eng, "conf%d" % k) for k in range(int(W.ui(eng, "confn")))]

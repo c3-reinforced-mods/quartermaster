@@ -72,6 +72,7 @@ begin
    //! by (src/lib/qmwrite.pas qmWrDst), and the one qmModList asks FileAge
    //! with. The same spelling records the stamps below.
    var qmGdDamaged : Boolean = False;
+   ParserSetIntValueByKeyByHandle(qmGdG, 'recheck', 0);
    var qmGdBase : String = ParserGetValueByKeyByHandle(qmGdRt, 'qmdir');
    if (qmGdHave) and (qmGdBase<>'') then
    begin
@@ -83,7 +84,16 @@ begin
          if (IntToStr(FileAge(qmGdBase+qmGdS))<>ParserGetValueByKeyByHandle(qmGdSt, 'oa'+IntToStr(qmGdK))) then
          begin
             if (not qmGdDamaged) then
-            qmLog('guard: output '+qmGdS+' changed on disk (FileAge '+IntToStr(FileAge(qmGdBase+qmGdS))+', recorded '+ParserGetValueByKeyByHandle(qmGdSt, 'oa'+IntToStr(qmGdK))+')');
+            begin
+               if (ParserGetValueByKeyByHandle(qmGdSt, 'oa'+IntToStr(qmGdK))='0') then
+               begin
+                  //! Recorded by an Apply that could not check it (below).
+                  ParserSetIntValueByKeyByHandle(qmGdG, 'recheck', 1);
+                  qmLog('guard: output '+qmGdS+' fell back in an Apply that could not check it against the scripts of the new set; built again now');
+               end
+               else
+               qmLog('guard: output '+qmGdS+' changed on disk (FileAge '+IntToStr(FileAge(qmGdBase+qmGdS))+', recorded '+ParserGetValueByKeyByHandle(qmGdSt, 'oa'+IntToStr(qmGdK))+')');
+            end;
             qmGdDamaged := True;
          end;
       end;
@@ -286,6 +296,17 @@ begin
             qmGdS := ParserGetValueByKeyByHandle(qmGdPlan, 'path'+IntToStr(qmGdK));
             ParserSetValueByKeyByHandle(qmGdSt, 'op'+IntToStr(qmGdOn), qmGdS);
             ParserSetValueByKeyByHandle(qmGdSt, 'oa'+IntToStr(qmGdOn), IntToStr(FileAge(qmGdBase2+qmGdS)));
+            //! An Apply checks what it merges against the scripts this process
+            //! loaded, not the ones the new set brings: a file that fell back
+            //! then (qm_gen x = fallback) may only have missed the library of a
+            //! mod just switched on. Its age is recorded as 0, which no file
+            //! has, so the next start finds it changed and builds it again
+            //! with the new set loaded - once: a start's own generation
+            //! records the real age (ref/boot.py recorded_age). Hands-on,
+            //! 2026-10-10: Reinforced - Core's DoProgress would have stayed
+            //! out of the merge for good.
+            if (qmGdApply) and (ParserGetValueByKeyByHandle(qmGdGen, 'x'+IntToStr(qmGdK))='fallback') then
+            ParserSetValueByKeyByHandle(qmGdSt, 'oa'+IntToStr(qmGdOn), '0');
             qmGdOn := qmGdOn+1;
          end;
       end;

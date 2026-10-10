@@ -15,7 +15,8 @@ requires:
 //! activated, or -1: every row the pending set switches on - the check of
 //! Apply):
 //!   - every file the generation merges or hooks that such a row takes part
-//!     in: a FAIL (the merged file does not compile, a data merge refused) or
+//!     in: a FAIL (the merged file does not compile, a data merge refused;
+//!     a WARN instead when such a row brings its own global scripts) or
 //!     FATAL decision is a FAIL, a WARN one a WARN;
 //!   - the row's own .inc files the game would load as they are (the plan's
 //!     skip or winner decisions it wins, and the never-generated
@@ -23,7 +24,7 @@ requires:
 //!     failure stops the game at start): each through qmValFiles. A mod that
 //!     brings its own global scripts (qm_glob gl<i>) may use them in its
 //!     .inc files, and those scripts are not the ones loaded now, so there a
-//!     file that does not compile is a WARN, not a FAIL;
+//!     file that does not compile is a LATER line, not a FAIL;
 //!   - its gui\menu.aix, if it ships one, loads as a parser (a menu.aix that
 //!     does not stops the game at start, context section 3);
 //!   - its own check, if it ships data\quartermaster\validate.aix: the state
@@ -44,6 +45,15 @@ requires:
 //! keeps the record manager aside, initmapgen.inc:70-71 and :248-250) and
 //! copied back at the end, so the window, the report and a later Apply see
 //! the boot's own state.
+//!
+//! What the running game cannot judge is neither: a file of a row that
+//! brings its own global scripts and does not compile with the ones loaded
+//! now (its own, a merge it is in, the scripts themselves, classes.script)
+//! is a LATER line - logged, counted in trlater, and no part of the status.
+//! Until 0.1.4 each was a WARN: Reinforced - Core, which is fine, showed
+//! WARN with 24 of them and OK after the restart (hands-on, 2026-10-10).
+//! The next start judges them: the boot's generation, and for a start that
+//! stops, the start-up guard (plan S17).
 //!
 //! Results in qm_ui: trst (OK, WARN, FAIL, or SKIP when the check cannot
 //! run), trn and per line k tr<k> (text) and trt<k> (FAIL or WARN), at most
@@ -68,6 +78,8 @@ var qmTrFail : array [0..15] of String;
 var qmTrWarn : array [0..15] of String;
 var qmTrNf : Integer = 0;
 var qmTrNw : Integer = 0;
+// LATER lines: what only a game with the row's own global scripts loaded can judge.
+var qmTrNl : Integer = 0;
 var qmTrVn : Integer = 0;
 var qmTrVrow : array [0..511] of Integer;
 var qmTrVrel : array [0..511] of String;
@@ -101,6 +113,9 @@ begin
       qmTrNf := qmTrNf+1;
    end
    else
+   if (qmTaTag='LATER') then
+   qmTrNl := qmTrNl+1
+   else
    begin
       if (qmTrNw<16) then
       qmTrWarn[qmTrNw] := qmTaText;
@@ -109,7 +124,7 @@ begin
    qmLog('trial '+qmTaTag+' '+qmTaText);
 end;
 //! 1 when the `;`-list qmTiList holds the position of an involved row.
-function qmTrTouches(const qmTiList : String) : Integer;
+function qmTrTouches(const qmTiList : String; const qmTiLib : Integer) : Integer;
 begin
    var qmTiK : Integer;
    var qmTiJ : Integer = 0;
@@ -119,7 +134,7 @@ begin
    while (qmTiF<>'') do
    begin
       for qmTiK:=0 to qmTrN-1 do
-      if (qmTrInv[qmTiK]=1) and (IntToStr(qmTrPos[qmTiK])=qmTiF) then
+      if (qmTrInv[qmTiK]=1) and ((qmTiLib=0) or (qmTrLib[qmTiK]=1)) and (IntToStr(qmTrPos[qmTiK])=qmTiF) then
       Result := 1;
       qmTiJ := qmTiJ+1;
       qmField(qmTiList, ';', qmTiJ, qmTiF);
@@ -260,13 +275,23 @@ begin
    qmTrX := ParserGetValueByKeyByHandle(qmTrG, 'x'+IntToStr(qmTrM));
    //! A merge or a hook the involved rows take part in.
    if (qmTrA='merge-inc') or (qmTrA='merge-data') or (qmTrA='hook') then
-   if (qmTrTouches(ParserGetValueByKeyByHandle(qmTrPlan, 'prov'+IntToStr(qmTrM)))=1) then
+   if (qmTrTouches(ParserGetValueByKeyByHandle(qmTrPlan, 'prov'+IntToStr(qmTrM)), 0)=1) then
    begin
       // The lines of the activation check.
       if (qmTrT='FAIL') or (qmTrT='FATAL') then
       begin
          if (qmTrX='datafail') then
          qmTrAdd('FAIL', qmTrP+': '+ParserGetValueByKeyByHandle(qmTrG, 'e'+IntToStr(qmTrM)))
+         else
+         //! A file merged from a row that brings its own global scripts may
+         //! call them, and they are not the ones loaded now: as for the row's
+         //! own files below, that is a WARN. An Apply builds the file again at
+         //! the next start, with the new set loaded (qmguard.pas). Until 0.1.4
+         //! it was a FAIL, and such a mod could not be activated again once it
+         //! was off (hands-on, 2026-10-10: Reinforced - Core refused twice,
+         //! "gui\menu.inc\doprogress.inc: the merged file does not compile").
+         if (qmTrTouches(ParserGetValueByKeyByHandle(qmTrPlan, 'prov'+IntToStr(qmTrM)), 1)=1) then
+         qmTrAdd('LATER', qmTrP+' does not compile merged with the global scripts loaded now; a mod in it brings its own, so it is built again at the next start')
          else
          if (qmTrX='fallback') then
          qmTrAdd('FAIL', qmTrP+': the merged file does not compile')
@@ -305,7 +330,7 @@ begin
       while (qmTrB<>'') do
       begin
          if (qmTrB='lib\classes.script') then
-         qmTrAdd('WARN', 'scripts\lib\classes.script is not checked: a running game cannot compile it')
+         qmTrAdd('LATER', 'scripts\lib\classes.script is not checked: a running game cannot compile it')
          else
          if (SubStr(qmTrB, 1, 4)='lib\') then
          qmTrOwn(qmTrI, 'scripts\'+qmTrB, 1);
@@ -344,12 +369,12 @@ begin
    begin
       qmField(ParserGetValueByKeyByHandle(qmTrV, 'vr'+IntToStr(qmTrK)), '|', 2, qmTrA);
       if (qmTrA='0') and (qmTrVs[qmTrK]=1) then
-      qmTrAdd('WARN', qmTrVrel[qmTrK]+' does not compile with the global scripts loaded now; if the mod does not bring what it needs, the game will not start')
+      qmTrAdd('LATER', qmTrVrel[qmTrK]+' does not compile with the global scripts loaded now; if the mod does not bring what it needs, the game will not start')
       else
       if (qmTrA='0') then
       begin
          if (qmTrLib[qmTrVrow[qmTrK]]=1) then
-         qmTrAdd('WARN', qmTrVrel[qmTrK]+' does not compile with the global scripts loaded now; the mod brings its own, so this is not certain')
+         qmTrAdd('LATER', qmTrVrel[qmTrK]+' does not compile with the global scripts loaded now; the mod brings its own, so this is not certain')
          else
          qmTrAdd('FAIL', qmTrVrel[qmTrK]+' does not compile');
       end;
@@ -512,6 +537,7 @@ qmTrT := 'WARN';
 if (qmTrNf>0) then
 qmTrT := 'FAIL';
 ParserSetValueByKeyByHandle(qmTrUi, 'trst', qmTrT);
+ParserSetIntValueByKeyByHandle(qmTrUi, 'trlater', qmTrNl);
 qmTrJ := 0;
 for qmTrK:=0 to qmTrNf-1 do
 if (qmTrK<16) then
@@ -535,4 +561,4 @@ begin
 end;
 ParserSetIntValueByKeyByHandle(qmTrUi, 'trfiles', qmTrVn);
 ParserSetIntValueByKeyByHandle(qmTrUi, 'trms', Floor((_misc_GetRealTime-qmTrT0)*1000));
-qmLog('trial row='+IntToStr(qmTrRow)+' st='+qmTrT+' fails='+IntToStr(qmTrNf)+' warns='+IntToStr(qmTrNw)+' own files='+IntToStr(qmTrVn)+' ms='+IntToStr(Floor((_misc_GetRealTime-qmTrT0)*1000)));
+qmLog('trial row='+IntToStr(qmTrRow)+' st='+qmTrT+' fails='+IntToStr(qmTrNf)+' warns='+IntToStr(qmTrNw)+' later='+IntToStr(qmTrNl)+' own files='+IntToStr(qmTrVn)+' ms='+IntToStr(Floor((_misc_GetRealTime-qmTrT0)*1000)));

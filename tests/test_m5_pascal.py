@@ -427,7 +427,8 @@ def guard_markers():
                            outs=list(OUTS))
 
 
-def guard_case(marker, fp, sync, damaged, changed, mods, apply, gen_ok, fpold=None):
+def guard_case(marker, fp, sync, damaged, changed, mods, apply, gen_ok, fpold=None,
+               fell_back=False):
     """One boot's guard in the interpreter; returns (engine, qm_guard node).
     `fpold`: qmFingerprint's fingerprint without the mods registered at this
     start (None: qm_rt has none)."""
@@ -458,12 +459,42 @@ def guard_case(marker, fp, sync, damaged, changed, mods, apply, gen_ok, fpold=No
         w = {0: b"yes", 1: b"same"}
         eng.set("qm_gen", status=b"ok" if gen_ok else b"fatal", gen=7, changed=changed, sn=0,
                 **dict((("w%d" % m), w[m]) for m in range(2)))
+        if fell_back:
+            eng.set("qm_gen", x0=b"fallback", s0=b"FAIL")
     eng.set("qm_plan", n=2, path0=PLAN_PATHS[0], path1=PLAN_PATHS[1])
     eng.set("qm_ini", action=b"written" if mods else b"same", effective=1 if mods else 0)
     eng.n_ParserSetValueByKeyByHandle(g, b"step", b"restart")
     run(eng, "qmGuard")
     run(eng, "qmMarkerSave")
     return eng, early
+
+
+@pytest.mark.parametrize("apply", [True, False])
+def test_a_file_that_fell_back_in_an_apply_is_built_again_at_the_next_start(apply):
+    # An Apply checks its merges against the scripts the running game loaded,
+    # not the ones the new set brings (hands-on, 2026-10-10: Core's DoProgress
+    # would have stayed out of the merge for good).
+    marker = B.Marker(gen=1, hash=b"1-2-3", phase=B.BOOTED, outs=list(OUTS))
+    eng, _early = guard_case(marker, b"4-5-6", False, False, 2, True, apply, True,
+                             fell_back=True)
+    after = B.parse_marker(eng.written[STATE])
+    real = [b"1564229500", b"1564229335", b"1564229400"]
+    want = [B.recorded_age(real[0], True, apply)] + real[1:]
+    assert [a for _p, a in after.outs] == want
+    assert (want[0] == B.UNCHECKED) == apply
+    # the next start: the same inputs, nothing touched on the disk
+    eng, _early = guard_case(after, b"4-5-6", False, False, 2, False, False, True)
+    plan = B.boot_plan(after, b"4-5-6", False, B.damaged(after, lambda p: dict(
+        zip([p for p, _a in after.outs], real))[p]))
+    assert plan.regen == apply and (plan.why == B.DAMAGED) == apply
+    assert (eng.key(b"qm_guard", b"regen") == b"1") == apply
+    assert eng.key(b"qm_guard", b"recheck") == (b"1" if apply else b"0")
+    said = [l for l in eng.log if b"fell back in an Apply" in l]
+    assert len(said) == (1 if apply else 0)
+    if apply:
+        # ... and that start's own generation records the real age: once
+        again = B.parse_marker(eng.written[STATE])
+        assert B.UNCHECKED not in [a for _p, a in again.outs]
 
 
 def guard_combos(every=1):

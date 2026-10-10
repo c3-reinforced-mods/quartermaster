@@ -258,6 +258,11 @@ begin
       if (qmUaTst='SKIP') then
       ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Activated without the check: '+ParserGetValueByKeyByHandle(qmUaUi, 'tr0')+'.')
       else
+      //! What only a start with the mod's own scripts can judge (qmTrial
+      //! trlater) is said, and is no warning.
+      if (ParserGetIntValueByKeyByHandle(qmUaUi, 'trlater')>0) then
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Checked: '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+qmUaS)+' works with the active mods. '+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'trlater'))+' of its files use its own scripts and are checked when the game restarts.')
+      else
       ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Checked: '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+qmUaS)+' works with the active mods.');
       //! The check's word for the row (tck<i>): ShowQmManager shows OK or WARN
       //! beside the row's + until Apply, instead of PENDING (since

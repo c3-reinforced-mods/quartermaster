@@ -633,11 +633,24 @@ record manager aside, initmapgen.inc:70-71 and :248-250).
   comes on the next frame.
 - **What qmTrial counts**, for the rows it is about: a FAIL or FATAL
   decision of the generation they take part in (the merged file does not
-  compile, a data merge refused); their own .inc files the game would load
+  compile, a data merge refused) - but a merged or hooked file that does
+  not compile is a LATER line when such a row brings its own global scripts: the
+  file may call them, and the running game has not loaded them. *Until
+  0.1.4 that was a FAIL, and a mod like that could not be activated again
+  once it was off (hands-on, 2026-10-10: Reinforced - Core refused twice,
+  "gui\menu.inc\doprogress.inc: the merged file does not compile").* The
+  Apply that follows meets the same miss, writes the file's fallback and
+  records its age as 0 in state.cfg (qmGuard; ref/boot.py `recorded_age`),
+  so the next start - with the new set's scripts loaded - finds it changed,
+  builds it again (`why=damaged`, qm_guard `recheck` = 1, its own report
+  line) and restarts once more if the file came out different; that
+  start's generation records the real age, so this happens once. Their
+  own .inc files the game would load
   as they are (the plan's skip and winner decisions they win, plus
   `gui\menu.inc\docreate.inc` and `scripts\common.inc\initmap.inc`) through
-  qmValFiles - a WARN instead of a FAIL for a mod that brings its own global
-  scripts, which those files may need; a `gui\menu.aix` that does not load
+  qmValFiles - for a mod that brings its own global scripts, which those
+  files may need, a file that does not compile is no FAIL but a LATER line
+  (below); a `gui\menu.aix` that does not load
   as a parser; and the mod's own check, `data\quartermaster\validate.aix`
   (docs/authoring.md). The rows' global scripts (`scripts\lib\*.script`)
   are compiled one by one against the ones loaded now (qmValFiles `vs`), a
@@ -662,7 +675,14 @@ record manager aside, initmapgen.inc:70-71 and :248-250).
 - **Keys of `qm_ui`**: `trpend`, `trapply`, and the answer `trst` (OK, WARN,
   FAIL, SKIP), `trn`, `tr<k>`, `trt<k>` (at most 16, FAIL first: `tr0` is
   the one the message line shows), `trrow`,
-  `trsig`, `trfiles` (own files validated), `trvals` (validation copies
+  `trsig`, `trlater` (LATER lines: what only a start with the row's own
+  global scripts loaded can judge - its files, a merge it is in, the
+  scripts themselves, classes.script - logged, counted, and no part of
+  `trst`; the message of an OK check says how many. *Until 0.1.4 each was
+  a WARN: Reinforced - Core, which is fine, showed WARN with 24 of them
+  and OK after the restart, hands-on 2026-10-10.* The next start judges
+  them: the boot's generation, and the start-up guard when a start stops),
+  `trfiles` (own files validated), `trvals` (validation copies
   deleted), `trms`.
 
 ### The rules seam

@@ -192,7 +192,13 @@ qmBtLine('FAIL', 'The previous start with generation '+IntToStr(ParserGetIntValu
 if (qmBtWhy='fallback-kept') then
 qmBtLine('FAIL', 'Merges stay switched off for these mods after a start that stopped before the main menu.');
 if (qmBtWhy='damaged') then
-qmBtLine('OK', 'Quartermaster''s files were changed from outside (an update?): regenerated.');
+begin
+   // After an Apply that could not check a merged file (qmGuard recheck).
+   if (ParserGetIntValueByKeyByHandle(qmBtG, 'recheck')=1) then
+   qmBtLine('OK', 'A file the last Apply could not check was built again, now that the scripts of the new mods are loaded.')
+   else
+   qmBtLine('OK', 'Quartermaster''s files were changed from outside (an update?): regenerated.');
+end;
 if (ParserGetValueByKeyByHandle(qmBtIni, 'action')='written') then
 begin
    //! Exactly what moved (1-based positions in mods.ini) and which flags

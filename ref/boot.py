@@ -71,7 +71,9 @@ Regenerate? (`boot_plan`, first rule that applies)
                    outputs were damaged (then regenerated in wta mode)
   damaged          an output's FileAge differs from the one recorded after
                    the generation (I6: a Workshop update restored the shipped
-                   copies): regenerate
+                   copies): regenerate. An Apply records the age of a file
+                   that fell back as 0 (`recorded_age`), so the next start,
+                   with the new set's scripts loaded, builds it again
   stable           nothing to do
 The UI's Apply (`apply=True`) always regenerates (normal mode), unless an MP
 sync is in progress.
@@ -283,6 +285,20 @@ def parse_marker(data):
         elif key == b";out" and len(f) > 2 and val:
             m.outs.append((val, f[2]))
     return m
+
+
+#: The age an Apply records for an output that fell back (qm_gen x =
+#: fallback): no file has it. An Apply checks what it merges against the
+#: scripts the running game loaded, not the ones the new set brings, so such
+#: a file may only have missed the library of a mod just switched on; the
+#: next start then finds it `damaged` and builds it again with the new set
+#: loaded. Once: a start's own generation records the real age.
+UNCHECKED = b"0"
+
+
+def recorded_age(age, fell_back, apply):
+    """What state.cfg keeps as an output's FileAge after a generation."""
+    return UNCHECKED if apply and fell_back else age
 
 
 def damaged(marker, age_of):
