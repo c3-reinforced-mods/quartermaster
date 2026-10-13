@@ -1,7 +1,7 @@
 state: qmAbout
 into: data/quartermaster/core.aix
 helpers: qmlog, qmstr, qmunesc
-requires:
+requires: maxsettings, rawsettings
 ---
 //! Every registered mod's about.cfg (plan G4; the grammar and the twin are
 //! ref/about.py, the author's side docs/authoring.md) into the named parser
@@ -34,7 +34,11 @@ requires:
 //!   sn<i> and per setting k: sid sty sdf slb ssc<i>_<k> (id, type, default,
 //!                            label, scope), slo shi sst sdc<i>_<k> (numbers,
 //!                            scaled by 10^decimals), sop<i>_<k> (`|a|b|`
-//!                            choices), smx<i>_<k> (text length, 0 = any)
+//!                            choices), smx<i>_<k> (text length, 0 = any),
+//!                            sgr<i>_<k> (the title of the `group` line it
+//!                            stands under, '' without one)
+var qmAbT0 : Float = _misc_GetRealTime;
+var qmAbSall : Integer = 0;
 var qmAbP : Integer = ParserSelectByKey('qm_about');
 if (qmAbP=0) then
 qmAbP := ParserCreate('qm_about');
@@ -49,7 +53,12 @@ var qmAbSids : String = '|';
 var qmAbSeen : String = '|';
 var qmAbLn : Integer = 0;
 var qmAbRn : Integer = 0;
-var qmAbRs : array [0..127] of String;
+//! Each kept `setting` value with the group it stands under in front,
+//! `<group>|<value>`: an internal string never holds `|` (it is ~124), and a
+//! second array would cost time on every call.
+var qmAbRs : array [0..${rawsettings}-1] of String;
+var qmAbGroup : String = '';
+var qmAbGp : Integer;
 var qmAbV : array [0..6] of String;
 var qmAbL : array [0..6] of String;
 var qmAbPre : array [0..255] of String;
@@ -225,8 +234,8 @@ begin
 end;
 
 //! One `setting = ...` value (ref/about.py parse_setting); a usable one is
-//! stored as setting qmAbSn.
-procedure qmAbSetting(const qmAgV : String);
+//! stored as setting qmAbSn, under the group `qmAgGrp`.
+procedure qmAbSetting(const qmAgV : String; const qmAgGrp : String);
 begin
    var qmAgF : array [0..5] of String;
    var qmAgNf : Integer = qmAbFields(qmAgV, ';');
@@ -437,9 +446,9 @@ begin
       qmAbProb('WARN', 'setting-twice', 'setting '+qmAgId+' is declared twice; the first one counts');
       exit;
    end;
-   if (qmAbSn>=32) then
+   if (qmAbSn>=${maxsettings}) then
    begin
-      qmAbProb('WARN', 'setting-many', 'more than 32 settings; setting '+qmAgId+' dropped');
+      qmAbProb('WARN', 'setting-many', 'more than '+IntToStr(${maxsettings})+' settings; setting '+qmAgId+' dropped');
       exit;
    end;
    qmAbSids := qmAbSids+qmAgId+'|';
@@ -457,6 +466,8 @@ begin
    ParserSetIntValueByKeyByHandle(qmAbP, 'sdc'+qmAgKey, qmAgD);
    ParserSetValueByKeyByHandle(qmAbP, 'sop'+qmAgKey, qmAgOpts);
    ParserSetIntValueByKeyByHandle(qmAbP, 'smx'+qmAgKey, qmAgMx);
+   qmUnesc(qmAgGrp, qmAgU);
+   ParserSetValueByKeyByHandle(qmAbP, 'sgr'+qmAgKey, qmAgU);
    qmAbSn := qmAbSn+1;
 end;
 
@@ -500,13 +511,22 @@ begin
       if (qmAlK='extends') then qmAbV[6] := qmAlV;
       exit;
    end;
+   //! A heading for the settings that follow, up to the next one.
+   if (qmAlK='group') then
+   begin
+      if (qmAlV='') then
+      qmAbProb('WARN', 'group', 'line '+IntToStr(qmAbLn)+': group needs a title; ignored')
+      else
+      qmAbGroup := qmAlV;
+      exit;
+   end;
    if (qmAlK='setting') then
    begin
-      if (qmAbRn>=128) then
-      qmAbProb('WARN', 'setting-lines', 'line '+IntToStr(qmAbLn)+': more than 128 setting lines; ignored')
+      if (qmAbRn>=${rawsettings}) then
+      qmAbProb('WARN', 'setting-lines', 'line '+IntToStr(qmAbLn)+': more than '+IntToStr(${rawsettings})+' setting lines; ignored')
       else
       begin
-         qmAbRs[qmAbRn] := qmAlV;
+         qmAbRs[qmAbRn] := qmAbGroup+'|'+qmAlV;
          qmAbRn := qmAbRn+1;
       end;
       exit;
@@ -616,6 +636,7 @@ begin
    qmAbSeen := '|';
    qmAbLn := 0;
    qmAbRn := 0;
+   qmAbGroup := '';
    qmAbPre[qmAbI] := '|';
    for qmAbK:=0 to 6 do
    begin
@@ -783,7 +804,10 @@ begin
       qmAbList('inc', 'incompatiblewith', 4);
       qmAbList('cmp', 'compatiblewith', 5);
       for qmAbK:=0 to qmAbRn-1 do
-      qmAbSetting(qmAbRs[qmAbK]);
+      begin
+         qmAbGp := StrPos('|', qmAbRs[qmAbK]);
+         qmAbSetting(SubStr(qmAbRs[qmAbK], qmAbGp+1, StrLength(qmAbRs[qmAbK])-qmAbGp), SubStr(qmAbRs[qmAbK], 1, qmAbGp-1));
+      end;
    end
    else
    begin
@@ -792,6 +816,7 @@ begin
    end;
    ParserSetIntValueByKeyByHandle(qmAbP, 'pn'+qmAbSi, qmAbPn);
    ParserSetIntValueByKeyByHandle(qmAbP, 'sn'+qmAbSi, qmAbSn);
+   qmAbSall := qmAbSall+qmAbSn;
    //! The names (ref/about.py names): the declared id, then the folder's
    //! identity (ref/order.py identity), ASCII case folded.
    qmAbT := '|';
@@ -876,4 +901,5 @@ ParserSetValueByKeyByHandle(qmAbP, 'pre'+IntToStr(qmAbI), qmAbPre[qmAbI]);
 ParserSetIntValueByKeyByHandle(qmAbP, 'n', qmAbN);
 ParserSetIntValueByKeyByHandle(qmAbP, 'self', qmAbSelfRow);
 ParserSetIntValueByKeyByHandle(qmAbP, 'files', qmAbFiles);
-qmLog('about files='+IntToStr(qmAbFiles)+' of '+IntToStr(qmAbN));
+//! With the settings read and the time it took: a file may declare a thousand.
+qmLog('about files='+IntToStr(qmAbFiles)+' of '+IntToStr(qmAbN)+' settings='+IntToStr(qmAbSall)+' ms='+FloatToStr((_misc_GetRealTime-qmAbT0)*1000));

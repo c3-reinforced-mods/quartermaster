@@ -25,6 +25,7 @@ type = mod
 exclusive = camera
 requires = 1325221799; mybase>=2.0
 loadAfter = 1255766623
+group = Camera keys
 setting = camera_left;key;A;Camera left
 ```
 
@@ -48,7 +49,8 @@ except the list keys and `setting`, whose values add up.
 | `loadAfter`, `loadBefore` | ids | WARN, ignored |
 | `incompatibleWith`, `compatibleWith` | ids | WARN, ignored |
 | `extraDirs` | folders (read, not used yet) | - |
-| `setting` | a setting (below), repeatable, at most 32 | WARN, dropped |
+| `setting` | a setting (below), repeatable, at most 1000 (32 until 0.1.5) | WARN, dropped |
+| `group` | a title for the settings after it (below; since 0.1.6) | WARN, ignored |
 
 Any other key is a WARN. A FAIL marks the mod FAIL in the window and in the
 report.
@@ -200,6 +202,57 @@ setting = <id>;<type>;<default>;<label>[;<extra>][;<scope>]
   `LanPublicServerUpdateClientInfo` at `:123`) and joins one from the
   server's list with `LanJoinGame` (`eventinternetshell.inc:308`) - so the
   same lines should carry the values there too; that is not tried either.
+
+### Many settings: the limit and groups
+
+A mod may declare 1000 settings; the 1001st and every one after it is
+dropped with a WARN (`more than 1000 settings; setting <id> dropped`). The
+number is not meant to be reached: it only bounds what a broken file can ask
+of the reader. Until 0.1.5 the limit was 32. settings.cfg and `qm_settings`
+are the same for every setting, whatever its number.
+
+The Options view shows a setting a row, in the order of the `setting`
+lines. A `group` line puts the settings after it into a group, up to the
+next `group` line:
+
+```
+group = Match interface
+setting = playerlist;bool;1;List of players on Tab
+setting = beaten;bool;1;Notice of a beaten player
+group = Economy
+setting = fishcatch;bool;1;Catch shown on a fishing boat
+```
+
+- Above the settings the view then has a list of the groups, each with the
+  number of its settings. The player picks a group and sees its settings
+  alone; the view opens on the first one. Keep a title short: the list cuts
+  one longer than about 35 characters with `...`.
+- The list's last entry, `All settings`, shows every setting under its
+  group's title. There a group stays on one page when it can, and a longer
+  one runs on under its title and `(continued)`.
+- Beside the list is a search box: it finds settings by a part of their
+  label or of their group's title, in every group at once. So a label that
+  names what the setting does in the player's words is found; an id is not
+  searched.
+- Settings before the first `group` line are a group of their own, called
+  `General` in the list. A title without a setting under it is not shown; a
+  `group` line with an empty title is a WARN and changes nothing; the same
+  title given twice is one group.
+- A page has nine rows under the list and the search box, ten without them.
+  A mod without `group` lines gets the search box alone once it has more
+  settings than a page holds; with ten or fewer its view is as it always
+  was.
+
+**With an older Quartermaster.** 0.1.5 and older keep the first 32 settings
+and drop the rest with a WARN; their Options view has no button for them,
+and your scripts read the defaults (the fallback of *Reading a setting*
+below - which is why it is there). A `group` line is an unknown key to them:
+one more WARN, and the settings in a flat list. A mod that needs more than
+32 settings, or the groups, says so with `quartermaster = 0.1.6`: an older
+Quartermaster then shows the mod as WARN with "<mod> is made for
+Quartermaster 0.1.6 or later, this is <version>" on its row, ahead of the
+file's own warnings, and in the report. The mod still loads. Put the
+settings a player most needs among the first 32 all the same.
 
 A key setting is refused, with the reason, when the game does not allow the
 key for a hotkey (its own list, `data/gui/menu.inc/hotkeysettings.inc:24-133`),

@@ -104,6 +104,7 @@ def expected(mods=MODS, files=FILES):
             keys[b"sdc" + sk] = b"%d" % st.decimals
             keys[b"sop" + sk] = b"|" + b"".join(T.unescape(o) + b"|" for o in st.options)
             keys[b"smx" + sk] = b"%d" % st.maxlen
+            keys[b"sgr" + sk] = T.unescape(st.group)
     return keys
 
 
@@ -191,7 +192,7 @@ def test_a_folder_without_mod_ini_is_named_by_its_dir():
         b"Named title", b"mods\\TC1", b"mods\\TC2"]
 
 
-@pytest.mark.parametrize("n", [127, 128, 130])
+@pytest.mark.parametrize("n", [32, 33, 40, 128, 130, 999, 1000, 1001, 1023, 1024, 1030])
 def test_setting_lines_past_the_cap(n):
     data = b"".join(b"setting = s%d;bool;1;S\r\n" % k for k in range(n))
     files = {b"mods\\Many": data}
@@ -199,6 +200,48 @@ def test_setting_lines_past_the_cap(n):
     eng = engine(mods, files)
     want = expected(mods, files)
     assert {k: eng.key(b"qm_about", k) for k in want} == want
+    # A thousand settings a mod (32 until 0.1.5), the rest dropped one by
+    # one; past 1024 setting lines a line is not even kept.
+    kept, lines = min(n, A.MAX_SETTINGS), min(n, A.RAW_SETTINGS)
+    assert A.MAX_SETTINGS == 1000 and eng.key(b"qm_about", b"sn0") == b"%d" % kept
+    assert eng.key(b"qm_about", b"sid0_%d" % (kept - 1)) == b"s%d" % (kept - 1)
+    assert eng.key(b"qm_about", b"sid0_%d" % kept) == b""
+    codes = [eng.key(b"qm_about", b"pc0_%d" % k) for k in range(int(eng.key(b"qm_about", b"pn0")))]
+    assert codes == [b"setting-lines"] * (n - lines) + [b"setting-many"] * (lines - kept)
+    if n == 1001:
+        assert eng.key(b"qm_about", b"px0_0") == b"more than 1000 settings; setting s1000 dropped"
+    if n == 1030:
+        assert eng.key(b"qm_about", b"px0_0") == b"line 1025: more than 1024 setting lines; ignored"
+
+
+GROUPED = (b"setting = top;bool;1;Before any group\r\n"
+           b"group = Match interface\r\n"
+           b"setting = a;bool;1;A\r\n"
+           b"setting = b;bool;1;B\r\n"
+           b"group =\r\n"
+           b"setting = c;bool;1;C\r\n"
+           b"GROUP = \t Pr\xc4\x99dko\xc5\x9b\xc4\x87 | keys \r\n"
+           b"setting = bad;colour;1;Bad\r\n"
+           b"setting = d;key;F;D\r\n"
+           b"group = Nothing under it\r\n"
+           b"group = Last\r\n"
+           b"setting = e;int;1;E;1..3\r\n")
+
+
+def test_a_group_line_titles_the_settings_after_it():
+    files = {b"mods\\Grouped": GROUPED, b"mods\\After": b"setting = x;bool;1;X\r\n"}
+    mods = [(b"mods\\Grouped", True, b""), (b"mods\\After", True, b""), (QM, True, b"")]
+    eng = engine(mods, files)
+    want = expected(mods, files)
+    assert {k: eng.key(b"qm_about", k) for k in want} == want
+    # The title as the bytes it stands for; `|` in one is no separator.
+    title = b"Pr\xc4\x99dko\xc5\x9b\xc4\x87 | keys"
+    assert [want[b"sgr0_%d" % k] for k in range(6)] == [
+        b"", b"Match interface", b"Match interface", b"Match interface", title, b"Last"]
+    assert [want[b"pc0_%d" % k] for k in range(2)] == [b"group", b"setting-type"]
+    assert want[b"px0_0"] == b"line 5: group needs a title; ignored"
+    # A group ends with its file: the next mod's settings stand under none.
+    assert want[b"sgr1_0"] == b"" and eng.key(b"qm_about", b"sgr1_0") == b""
 
 
 # ------------------------------------------------------------------ rules

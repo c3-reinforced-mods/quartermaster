@@ -250,6 +250,7 @@ STRING_BUDGET = 200000
 # templates as build variables, so the twin and the game read one definition.
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
+from ref import about as _about  # noqa: E402
 from ref import diff as _diff  # noqa: E402
 from ref import fingerprint as _fingerprint  # noqa: E402
 from ref import inc as _inc  # noqa: E402
@@ -641,6 +642,8 @@ def build_variables(shipped_hooks=()):
         "inchead": INC_HEAD,
         "indexbatch": INDEX_BATCH,
         "sizecap": _planner.SIZE_CAP_LINES,
+        "maxsettings": _about.MAX_SETTINGS,
+        "rawsettings": _about.RAW_SETTINGS,
         "scannamed": _pipe_list(list(_planner.HOOK_FILES) + list(_planner.PHASE_B_DATA)
                                 + [_planner.ADDITIVE_GLOBAL]),
         "phasebdata": _pipe_list(_planner.PHASE_B_DATA),

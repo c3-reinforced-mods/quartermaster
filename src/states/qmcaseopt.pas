@@ -13,18 +13,29 @@ requires:
 //!   key <code>    a key's down event for the first setting, in order; each
 //!                 after a click on its Change button (tag 200); 27 = Escape
 //!   accept 1      Accept at the end (tag 115)
+//!   keep 1        no Accept, and the Options view as the actions left it
+//!                 shown again on the first main-menu frame, for a look at it
+//!                 (a run with a hold): the case's own window does not
+//!                 outlive the start-up, so the steps to the view - the mod,
+//!                 Options, the group, the search, the page - are left for
+//!                 qmTick (qm_rt uishow and uiplay, qmrestarttick.pas)
 //! and, in the order given (the in-game checks of what the
 //! offline tests cover):
 //!   btn <n>       in the Options view, the button with tag 200+n (setting
 //!                 n div 2; 0 main, 1 the other): Switch, +, -, >, <, Edit
 //!   type <text>   the text typed into the Options view's text box
+//!   page <d>      Next (d = 1, tag 114) or Previous (d = -1, tag 113)
+//!   val <k>       no click: what the view holds for setting k
+//!   group <g>     entry g picked in the list of groups (its last entry is
+//!                 all settings), as a pick in the open list arrives
+//!   find <text>   the text typed into the search box (none: the box emptied)
 //!   autosort 1    Auto-sort (tag 119) in the lists
 //!   trial <dir>   that row activated (tag 101), then what qmTick does on the
 //!                 next frame: qmTrial and qmUiAct `trialdone`
 //!   applytrial 1  Apply (tag 103), qmTick's frame if a check was asked,
 //!                 the dialog's state, then No (tag 108)
-//! btn and type run in the Options view before Accept; autosort, trial and
-//! applytrial in the lists, after it.
+//! btn, type, page, val, group and find run in the Options view before
+//! Accept; autosort, trial and applytrial in the lists, after it.
 //! Dump lines (tools/m10cases.py checks them):
 //!   ensure|<ready>|<adds>
 //!   rows|<mod row>|<clash row>|<abok>|<abs of the mod>
@@ -32,10 +43,16 @@ requires:
 //!   rule|deactivate|<pe of clash>
 //!   rule|activate|<pe of clash>|<msg>
 //!   opt|<panel>|<optn>|<ov0>|<ov1>|<ov2>|<ov3>
+//!   view|<ogn>|<optstrip>|<optper>|<optgrp>|<optshown>|<optrows>
 //!   cap|<code>|<optcap after Change>|<optcap after the key>|<ov0>|<msg>
 //!   acc|<panel>|<msg>|<reregs>|<setsave>|<camera_left in qm_settings>
 //!   btn|<n>|<ov of that setting>|<optsel>|<msg>
 //!   type|<optsel>|<ov of that setting>
+//!   page|<d>|<optpg>|<optrows>
+//!   val|<k>|<its id>|<stored>|<edited>|<its group's title>
+//!   group|<g>|<list found>|<optgrp>|<optshown>|<optrows>|<first row's setting>
+//!   find|<text>|<box found>|<optq>|<optshown>|<optrows>|<first row's setting>|<its orh>
+//!   keep|<steps left for qmTick>
 //!   store|<mod id>|<id>=<value>|... (its qm_settings child, after Accept)
 //!   sort|<ordchg>|<the pending order's dirs, ;>
 //!   trial|<dir>|<row>|<pe at once>|<trpend>|<pe after>|<trst>|<trn>|<tr0>|<msg>
@@ -46,6 +63,8 @@ requires:
 const qmCoTagDeact = 102;
 const qmCoTagAct = 101;
 const qmCoTagOptions = 118;
+const qmCoTagPrev = 113;
+const qmCoTagNext = 114;
 const qmCoTagAccept = 115;
 const qmCoTagRow = 200;
 const qmCoTagApply = 103;
@@ -62,6 +81,7 @@ var qmCoClash : String = '';
 var qmCoKeys : array [0..15] of Integer;
 var qmCoKn : Integer = 0;
 var qmCoAccept : Integer = 0;
+var qmCoKeep : Integer = 0;
 var qmCoD : Integer;
 var qmCoI : Integer;
 var qmCoS : String;
@@ -78,6 +98,7 @@ var qmCoA : Integer;
 var qmCoR : Integer;
 var qmCoPe : Integer;
 var qmCoTp : Integer;
+var qmCoGh : Integer;
 
 procedure qmCoPut(const qmOpLine : String);
 begin
@@ -194,9 +215,14 @@ begin
    end;
    if (qmCoVerb='accept') then
    qmCoAccept := StrToInt(qmCoArg);
-   if ((qmCoVerb='btn') or (qmCoVerb='type') or (qmCoVerb='autosort') or (qmCoVerb='trial') or (qmCoVerb='applytrial')) and (qmCoAn<32) then
+   if (qmCoVerb='keep') then
+   qmCoKeep := StrToInt(qmCoArg);
+   if ((qmCoVerb='btn') or (qmCoVerb='type') or (qmCoVerb='page') or (qmCoVerb='val') or (qmCoVerb='group') or (qmCoVerb='find') or (qmCoVerb='autosort') or (qmCoVerb='trial') or (qmCoVerb='applytrial')) and (qmCoAn<32) then
    begin
       qmCoActV[qmCoAn] := qmCoVerb;
+      //! A verb alone has no argument (`find`: the search box emptied).
+      qmCoActA[qmCoAn] := '';
+      if (StrLength(qmCoS)>StrLength(qmCoVerb)+1) then
       qmCoActA[qmCoAn] := SubStr(qmCoS, StrLength(qmCoVerb)+2, StrLength(qmCoS)-StrLength(qmCoVerb)-1);
       qmCoAn := qmCoAn+1;
    end;
@@ -227,12 +253,13 @@ begin
    qmCoStr('msg', qmCoS);
    qmCoPut('rule|activate|'+IntToStr(qmCoInt('pe'+IntToStr(qmCoRowC)))+'|'+qmCoS);
 end;
-if (qmCoRowM>=0) and ((qmCoRowC>=0) or (qmCoKn>0) or (qmCoAccept=1)) then
+if (qmCoRowM>=0) and ((qmCoRowC>=0) or (qmCoKn>0) or (qmCoAccept=1) or (qmCoKeep=1)) then
 begin
    //! The Options view of the mod, the keys, Accept.
    qmCoSelect(qmCoRowM);
    _gui_SendTagToState('EventQmManager', qmCoTagOptions);
    qmCoPut('opt|'+IntToStr(qmCoInt('panel'))+'|'+IntToStr(qmCoInt('optn'))+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'ov0')+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'ov1')+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'ov2')+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'ov3'));
+   qmCoPut('view|'+IntToStr(qmCoInt('ogn'))+'|'+IntToStr(qmCoInt('optstrip'))+'|'+IntToStr(qmCoInt('optper'))+'|'+IntToStr(qmCoInt('optgrp'))+'|'+IntToStr(qmCoInt('optshown'))+'|'+IntToStr(qmCoInt('optrows')));
    for qmCoI:=0 to qmCoKn-1 do
    begin
       _gui_SendTagToState('EventQmManager', qmCoTagRow);
@@ -254,6 +281,49 @@ begin
       begin
          qmCoType(qmCoActA[qmCoA]);
          qmCoPut('type|'+IntToStr(qmCoInt('optsel'))+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'ov'+IntToStr(qmCoInt('optsel'))));
+      end;
+      if (qmCoActV[qmCoA]='page') then
+      begin
+         if (StrToInt(qmCoActA[qmCoA])<0) then
+         _gui_SendTagToState('EventQmManager', qmCoTagPrev)
+         else
+         _gui_SendTagToState('EventQmManager', qmCoTagNext);
+         qmCoPut('page|'+qmCoActA[qmCoA]+'|'+IntToStr(qmCoInt('optpg'))+'|'+IntToStr(qmCoInt('optrows')));
+      end;
+      if (qmCoActV[qmCoA]='group') then
+      begin
+         //! The entry made the list's own, then the `select` the engine sends
+         //! for a pick (qmCoSelect does the same for the Active list).
+         qmCoGh := GetGUIElementIndexByNameParent('QmManager.main.wnd.ogroup', _gui_GetTop);
+         if (qmCoGh<>0) then
+         begin
+            SetGUIListBoxItemIndexSilent(qmCoGh, StrToInt(qmCoActA[qmCoA]));
+            SetGUIValue('Status', 'select');
+            SetGUIValue('Press', 'c');
+            SetGUIIntValue('Tag', 0);
+            SetGUIIntValue('ElementHandle', qmCoGh);
+            GUIExecuteState('EventQmManager');
+         end;
+         qmCoPut('group|'+qmCoActA[qmCoA]+'|'+BoolToStr(qmCoGh<>0)+'|'+IntToStr(qmCoInt('optgrp'))+'|'+IntToStr(qmCoInt('optshown'))+'|'+IntToStr(qmCoInt('optrows'))+'|'+IntToStr(qmCoInt('orw0')));
+      end;
+      if (qmCoActV[qmCoA]='find') then
+      begin
+         //! The text, then a key's release sent to the window's event state
+         //! (qmCoType does the same for a text setting's box).
+         qmCoGh := GetGUIElementIndexByNameParent('QmManager.sbox.ofind.text', _gui_GetTop);
+         if (qmCoGh<>0) then
+         SetGUIElementText(qmCoGh, qmCoActA[qmCoA]);
+         SetGUIValue('Status', 'key');
+         SetGUIValue('Press', 'u');
+         SetGUIIntValue('Tag', 65);
+         SetGUIIntValue('ElementHandle', qmCoGh);
+         GUIExecuteState('EventQmManager');
+         qmCoPut('find|'+qmCoActA[qmCoA]+'|'+BoolToStr(qmCoGh<>0)+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'optq')+'|'+IntToStr(qmCoInt('optshown'))+'|'+IntToStr(qmCoInt('optrows'))+'|'+IntToStr(qmCoInt('orw0'))+'|'+IntToStr(qmCoInt('orh0')));
+      end;
+      if (qmCoActV[qmCoA]='val') then
+      begin
+         qmCoS := qmCoActA[qmCoA];
+         qmCoPut('val|'+qmCoS+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'oid'+qmCoS)+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'ovs'+qmCoS)+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'ov'+qmCoS)+'|'+ParserGetValueByKeyByHandle(qmCoUi, 'ogr'+qmCoS));
       end;
    end;
    if (qmCoAccept=1) then
@@ -285,7 +355,7 @@ begin
    end;
 end;
 //! The actions in the lists.
-if (qmCoInt('panel')=2) then
+if (qmCoInt('panel')=2) and (qmCoKeep=0) then
 _gui_SendTagToState('EventQmManager', qmCoTagOptions);
 for qmCoA:=0 to qmCoAn-1 do
 begin
@@ -320,6 +390,36 @@ begin
       if (qmCoInt('mode')=1) then
       _gui_SendTagToState('EventQmManager', qmCoTagNo);
    end;
+end;
+if (qmCoKeep=1) and (qmCoInt('panel')=2) then
+begin
+   var qmCoRtp : Integer = ParserSelectByKey('qm_rt');
+   var qmCoPn : Integer = 0;
+   ParserSetValueByKeyByHandle(qmCoRtp, 'uiplayc0', 'select');
+   ParserSetIntValueByKeyByHandle(qmCoRtp, 'uiplaya0', qmCoRowM);
+   ParserSetValueByKeyByHandle(qmCoRtp, 'uiplayc1', 'options');
+   ParserSetValueByKeyByHandle(qmCoRtp, 'uiplayc2', 'optgroup');
+   ParserSetIntValueByKeyByHandle(qmCoRtp, 'uiplaya2', qmCoInt('optgrp'));
+   qmCoPn := 3;
+   qmCoStr('optq', qmCoS);
+   if (qmCoS<>'') then
+   begin
+      ParserSetValueByKeyByHandle(qmCoRtp, 'uiplayc'+IntToStr(qmCoPn), 'optfind');
+      ParserSetValueByKeyByHandle(qmCoRtp, 'uiplayt'+IntToStr(qmCoPn), qmCoS);
+      qmCoPn := qmCoPn+1;
+   end;
+   for qmCoI:=1 to qmCoInt('optpg') do
+   if (qmCoPn<16) then
+   begin
+      ParserSetValueByKeyByHandle(qmCoRtp, 'uiplayc'+IntToStr(qmCoPn), 'optpage');
+      ParserSetIntValueByKeyByHandle(qmCoRtp, 'uiplaya'+IntToStr(qmCoPn), 1);
+      qmCoPn := qmCoPn+1;
+   end;
+   ParserSetIntValueByKeyByHandle(qmCoRtp, 'uiplayn', qmCoPn);
+   //! Five seconds on: past the menu's second build (qmrestarttick.pas).
+   ParserSetIntValueByKeyByHandle(qmCoRtp, 'uishowat', Floor(_misc_GetRealTime*10)+50);
+   ParserSetIntValueByKeyByHandle(qmCoRtp, 'uishow', 1);
+   qmCoPut('keep|'+IntToStr(qmCoPn));
 end;
 var qmCoH : Integer = GetGUIElementIndexByNameParent('QmManager', _gui_GetTop);
 if (qmCoH<>0) then

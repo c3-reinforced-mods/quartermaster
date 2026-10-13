@@ -12,9 +12,13 @@ the engine writes is not modelled - only that what is saved loads back; the
 in-game run shows the real file.
 """
 import copy
+import random
+
+import pytest
 
 import test_m5_pascal as PAS5
 import test_m6_window as W6
+from ref import about as A
 
 QM = PAS5.QM
 SAVE = PAS5.SAVE
@@ -356,3 +360,271 @@ def test_a_text_setting_is_edited_in_the_box_and_cut_to_its_length():
     W6.cmd(eng, "optacc")
     assert setting(eng, b"qmtestwasd", b"tag") == b"abcde"
     assert ui(eng, "typed") == b""
+
+
+# ------------------------------------------- more than 32 settings, and groups
+def many_about(sizes):
+    """An about.cfg of bool settings s0, s1, ... in groups: `(title, count)`
+    each, an empty title for settings before any `group` line."""
+    out, k = [b"id = qmtestwasd\r\n"], 0
+    for title, count in sizes:
+        if title:
+            out.append(b"group = " + title + b"\r\n")
+        for _ in range(count):
+            out.append(b"setting = s%d;bool;1;Setting %d\r\n" % (k, k))
+            k += 1
+    return b"".join(out)
+
+
+def opened_on(data):
+    eng = booted(files={WASD + b"\\about.cfg": data})
+    W6.cmd(eng, "select", arg=0)
+    W6.cmd(eng, "options")
+    assert ui(eng, "panel") == b"2"
+    return eng
+
+
+def rows_of(eng):
+    return [(int(ui(eng, "orw%d" % j)), int(ui(eng, "orh%d" % j)))
+            for j in range(int(ui(eng, "optrows")))]
+
+
+def twin_rows(data, group=0, query=b""):
+    kind = {b"set": 0, b"head": 1, b"more": 2, b"none": 0}
+    return [(k, kind[what]) for what, k in A.option_view(A.parse(data).settings, group, query)]
+
+
+def groups_of(eng):
+    return [(ui(eng, "ogt%d" % g), int(ui(eng, "ogc%d" % g))) for g in range(int(ui(eng, "ogn")))]
+
+
+def _shapes():
+    fixed = [[(b"", 7)], [(b"", 10)], [(b"", 11)], [(b"", 23)], [(b"", 3), (b"A", 5)], [(b"A", 4), (b"B", 4), (b"C", 4)],
+             [(b"A", 6), (b"B", 5)], [(b"", 9), (b"A", 1)], [(b"A", 12), (b"B", 2)],
+             [(b"", 2), (b"A", 12)], [(b"A", 19)], [(b"A", 2), (b"A", 2), (b"B", 1), (b"A", 1)],
+             [(b"A", 9), (b"B", 9), (b"C", 9)], [(b"A", 10)], [(b"A", 1)] * 3 + [(b"B", 1)] * 12,
+             [(b"Match interface", 30), (b"Camera | keys", 30), (b"Economy", 40)]]
+    rnd = random.Random(11)
+    for _ in range(16):
+        shape = [(rnd.choice([b"A", b"B", b"C"]), rnd.randint(1, 13)) for _ in range(rnd.randint(1, 8))]
+        if rnd.random() < 0.5:
+            shape.insert(0, (b"", rnd.randint(1, 11)))
+        fixed.append(shape)
+    return fixed
+
+
+@pytest.mark.parametrize("shape", _shapes())
+def test_the_rows_of_the_options_view_equal_the_twin(shape):
+    data = many_about(shape)
+    st = A.parse(data).settings
+    eng = opened_on(data)
+    assert int(ui(eng, "optn")) == len(st) == sum(c for _t, c in shape) <= A.MAX_SETTINGS
+    groups = A.option_groups(st)
+    assert groups_of(eng) == groups
+    assert (ui(eng, "optstrip"), ui(eng, "optper")) == (
+        (b"1", b"9") if A.option_strip(st) else (b"0", b"10"))
+    # it opens on the first group; without groups that is every setting
+    assert ui(eng, "optgrp") == b"0" and rows_of(eng) == twin_rows(data, 0)
+    if not groups:
+        # no group line: row j is setting j, as before 0.1.6
+        assert rows_of(eng) == [(k, 0) for k in range(len(st))]
+    if not A.option_strip(st):
+        return
+    # every group alone, then - the list's last entry - all under their titles
+    for g in range(len(groups) + 1):
+        W6.cmd(eng, "optgroup", arg=g)
+        assert ui(eng, "optgrp") == b"%d" % g and rows_of(eng) == twin_rows(data, g)
+        assert int(ui(eng, "optshown")) == sum(1 for k, h in rows_of(eng) if h == 0 and k >= 0)
+    assert int(ui(eng, "optshown")) == len(st)
+    # a search goes over every group, whatever the list shows
+    W6.cmd(eng, "optgroup", arg=0)
+    for q in (b"setting 1", b"SETTING 2", b"a", b"camera", b"g 1", b"no such"):
+        W6.cmd(eng, "optfind", text=q)
+        assert ui(eng, "optq") == q and rows_of(eng) == twin_rows(data, 0, q)
+    W6.cmd(eng, "optfind", text=b"")
+    assert rows_of(eng) == twin_rows(data, 0)
+
+
+def test_the_pages_follow_the_rows_not_the_settings():
+    eng = opened_on(many_about([(b"A", 6), (b"B", 6), (b"C", 6)]))
+    # the first group alone: one page, and Next stays on it
+    assert ui(eng, "optn") == b"18" and ui(eng, "optrows") == b"6"
+    W6.cmd(eng, "optpage", arg=1)
+    assert ui(eng, "optpg") == b"0"
+    # All settings, nine rows a page under the strip: a group of six with its
+    # title does not fit the two rows left, so each group has a page
+    W6.cmd(eng, "optgroup", arg=3)
+    assert ui(eng, "optrows") == b"25" and rows_of(eng)[7:10] == [(-1, 0)] * 2 + [(6, 1)]
+    W6.cmd(eng, "optpage", arg=-1)
+    assert ui(eng, "optpg") == b"0"
+    W6.cmd(eng, "optpage", arg=1)
+    W6.cmd(eng, "optpage", arg=1)
+    assert ui(eng, "optpg") == b"2"
+    W6.cmd(eng, "optpage", arg=1)                         # the last page stays
+    assert ui(eng, "optpg") == b"2"
+    W6.cmd(eng, "optpage", arg=-1)
+    assert ui(eng, "optpg") == b"1"
+    # another group, a search and the view opened again start at the first page
+    W6.cmd(eng, "optgroup", arg=1)
+    assert ui(eng, "optpg") == b"0" and rows_of(eng) == [(k, 0) for k in range(6, 12)]
+    W6.cmd(eng, "optgroup", arg=3)
+    W6.cmd(eng, "optpage", arg=1)
+    W6.cmd(eng, "optfind", text=b"setting 1")
+    assert ui(eng, "optpg") == b"0"
+    W6.cmd(eng, "optcancel")
+    W6.cmd(eng, "options")
+    assert (ui(eng, "optpg"), ui(eng, "optgrp"), ui(eng, "optq")) == (b"0", b"0", b"")
+    assert ui(eng, "ogr6") == b"B" and ui(eng, "ogr0") == b"A" and ui(eng, "optrows") == b"6"
+
+
+def test_a_group_is_picked_from_the_list_and_a_search_goes_over_all_of_them():
+    data = many_about([(b"", 2), (b"Match interface", 3), (b"Camera", 6)])
+    eng = opened_on(data)
+    assert groups_of(eng) == [(b"", 2), (b"Match interface", 3), (b"Camera", 6)]
+    assert rows_of(eng) == [(0, 0), (1, 0)]               # the settings under no group
+    W6.cmd(eng, "optgroup", arg=2)
+    assert rows_of(eng) == [(k, 0) for k in range(5, 11)] and ui(eng, "optshown") == b"6"
+    # an entry the list does not have is its last one, All settings
+    for g in (7, -1):
+        W6.cmd(eng, "optgroup", arg=g)
+        assert ui(eng, "optgrp") == b"3" and ui(eng, "optshown") == b"11"
+    # a value changed in one view is the same setting's in every other
+    W6.cmd(eng, "optgroup", arg=2)
+    button(eng, 7)
+    W6.cmd(eng, "optfind", text=b"setting 7")
+    assert rows_of(eng) == [(7, 1), (7, 0)] and ui(eng, "ov7") == b"0"
+    # a group is found by its title too
+    W6.cmd(eng, "optfind", text=b"CAMERA")
+    assert rows_of(eng) == [(5, 1)] + [(k, 0) for k in range(5, 11)]
+    # picking a group ends the search
+    W6.cmd(eng, "optgroup", arg=1)
+    assert ui(eng, "optq") == b"" and rows_of(eng) == [(2, 0), (3, 0), (4, 0)]
+    # nothing found: no row, one page; Esc empties the search first and only
+    # the next one leaves the view
+    W6.cmd(eng, "optfind", text=b"zzz")
+    assert (ui(eng, "optrows"), ui(eng, "optshown")) == (b"0", b"0")
+    W6.cmd(eng, "optpage", arg=1)
+    assert ui(eng, "optpg") == b"0"
+    W6.cmd(eng, "esc", text=b"zzz")                       # it comes with the box's text
+    assert ui(eng, "panel") == b"2" and ui(eng, "optq") == b""
+    assert rows_of(eng) == [(2, 0), (3, 0), (4, 0)]
+    # Enter in the search box searches, and the lists' own filter stays
+    W6.cmd(eng, "enter", text=b"setting 1")
+    assert ui(eng, "optq") == b"setting 1" and ui(eng, "filter") == b""
+    assert [k for k, h in rows_of(eng) if h == 0] == [1, 10]
+    # Accept stores what was changed, whatever the view shows
+    W6.cmd(eng, "optacc")
+    assert ui(eng, "msg") == b"Options saved: 1 changed." and setting(eng, b"qmtestwasd", b"s7") == b"0"
+    W6.cmd(eng, "options")
+    W6.cmd(eng, "esc")                                    # no search: Esc leaves at once
+    assert ui(eng, "panel") == b"0"
+
+
+GROUPED_ABOUT = (b"id = qmtestwasd\r\ngroup = Keys\r\nsetting = left;key;A;Camera left\r\n"
+                 b"setting = right;key;D;Camera right\r\ngroup = Other\r\n"
+                 b"setting = tag;text;qm;Tag;5\r\nsetting = smooth;bool;1;Smooth scrolling\r\n")
+
+
+def test_a_new_view_ends_a_key_capture_and_a_text_edit_and_keeps_what_was_typed():
+    eng = opened_on(GROUPED_ABOUT)
+    button(eng, 0)
+    assert ui(eng, "optcap") == b"0"
+    W6.cmd(eng, "optgroup", arg=1)
+    assert ui(eng, "optcap") == b"-1" and rows_of(eng) == [(2, 0), (3, 0)] and ui(eng, "msg") == b""
+    button(eng, 2)
+    assert ui(eng, "optsel") == b"2" and ui(eng, "typed") == b"qm"
+    W6.cmd(eng, "filter", text=b"abc")
+    assert ui(eng, "ov2") == b"abc"
+    W6.cmd(eng, "optfind", text=b"smooth")
+    assert ui(eng, "optsel") == b"-1" and ui(eng, "ov2") == b"abc"
+    assert rows_of(eng) == [(3, 1), (3, 0)]
+    # while a text setting is edited, Enter is the edit's and no search
+    W6.cmd(eng, "optfind", text=b"")
+    button(eng, 2)
+    W6.cmd(eng, "enter", text=b"xy")
+    assert ui(eng, "ov2") == b"xy" and ui(eng, "optq") == b"" and ui(eng, "optsel") == b"2"
+
+
+def test_a_small_mod_without_groups_has_no_strip_and_takes_none_of_its_commands():
+    eng = opened()
+    assert (ui(eng, "optstrip"), ui(eng, "optper"), ui(eng, "ogn")) == (b"0", b"10", b"0")
+    before = rows_of(eng)
+    W6.cmd(eng, "optfind", text=b"camera")
+    assert rows_of(eng) == before == [(k, 0) for k in range(7)] and ui(eng, "optq") == b""
+    W6.cmd(eng, "optgroup", arg=3)
+    assert rows_of(eng) == before and ui(eng, "optgrp") == b"0"
+    # Enter with no search box and no text being edited does nothing, as before
+    W6.cmd(eng, "enter", text=b"zoom")
+    assert (ui(eng, "optq"), ui(eng, "filter"), ui(eng, "panel")) == (b"", b"", b"2")
+    # eleven settings are more than a page: the search box, nine rows a page
+    eng = opened_on(many_about([(b"", 11)]))
+    assert (ui(eng, "optstrip"), ui(eng, "optper"), ui(eng, "ogn")) == (b"1", b"9", b"0")
+    W6.cmd(eng, "optfind", text=b"setting 10")
+    assert rows_of(eng) == [(10, 0)]
+
+
+def test_a_setting_past_the_old_limit_is_stored_loaded_and_defaulted_like_the_rest():
+    data = many_about([(b"", 40)]).replace(b"setting = s38;bool;1;", b"setting = s38;int;4;") \
+        .replace(b"Setting 38\r\n", b"Setting 38;1..9\r\n")
+    assert A.parse(data).problems == [] and len(A.parse(data).settings) == 40
+    eng = opened_on(data)
+    assert ui(eng, "optn") == b"40" and ui(eng, "abs0") == b"40"
+    assert setting(eng, b"qmtestwasd", b"s39") == b"1" and setting(eng, b"qmtestwasd", b"s38") == b"4"
+    button(eng, 33)                                       # Switch
+    button(eng, 38)                                       # +
+    button(eng, 39)
+    button(eng, 39)                                       # off and on again: not a change
+    assert (ui(eng, "ov33"), ui(eng, "ov38"), ui(eng, "ov39")) == (b"0", b"5", b"1")
+    assert setting(eng, b"qmtestwasd", b"s33") == b"1"    # nothing is stored before Accept
+    W6.cmd(eng, "optacc")
+    assert ui(eng, "msg") == b"Options saved: 2 changed."
+    assert setting(eng, b"qmtestwasd", b"s33") == b"0" and setting(eng, b"qmtestwasd", b"s38") == b"5"
+    PAS5.load(eng, "qmTick", "qmRestart", "qmMarkerSave", "qmSetSave")
+    PAS5.run(eng, "qmTick")
+    keys, kids = eng.saved[SETTINGS]
+    mine = dict(kids)[b"qmtestwasd"][0]
+    # the file holds every setting under its id: the format did not change
+    assert sorted(mine) == sorted(b"s%d" % k for k in range(40))
+    assert (mine[b"s33"], mine[b"s38"], mine[b"s0"]) == (b"0", b"5", b"1")
+    # the next start reads them back ...
+    again = booted(files={WASD + b"\\about.cfg": data}, saved=eng.saved[SETTINGS])
+    assert setting(again, b"qmtestwasd", b"s33") == b"0" and setting(again, b"qmtestwasd", b"s38") == b"5"
+    W6.cmd(again, "select", arg=0)
+    W6.cmd(again, "options")
+    assert (ui(again, "ovs33"), ui(again, "ovs38"), ui(again, "ovs39")) == (b"0", b"5", b"1")
+    # ... and a stored value that does not fit its declaration is the default
+    bad = ({}, [(b"qmtestwasd", ({b"s38": b"77", b"s35": b"maybe", b"s33": b"0"}, []))])
+    fixed = booted(files={WASD + b"\\about.cfg": data}, saved=bad)
+    assert [setting(fixed, b"qmtestwasd", b"s%d" % k) for k in (33, 35, 38)] == [b"0", b"1", b"4"]
+
+
+def test_a_thousand_settings_are_kept_edited_and_stored_by_their_own_numbers():
+    # The keys of a setting end in its number: `ov1` + 23 must not be `ov12` + 3.
+    data = many_about([(b"A", 400), (b"B", 600)])
+    eng = opened_on(data)
+    assert ui(eng, "optn") == b"1000" == ui(eng, "abs0")
+    assert rows_of(eng) == twin_rows(data)
+    assert (ui(eng, "oid999"), ui(eng, "ogr999"), ui(eng, "ogr399"), ui(eng, "ogr400")) == (
+        b"s999", b"B", b"A", b"B")
+    for k in (12, 123, 999):
+        button(eng, k)
+    off = {12, 123, 999}
+    assert all(ui(eng, "ov%d" % k) == (b"0" if k in off else b"1") for k in range(1000))
+    W6.cmd(eng, "optacc")
+    assert ui(eng, "msg") == b"Options saved: 3 changed."
+    assert all(setting(eng, b"qmtestwasd", b"s%d" % k) == (b"0" if k in off else b"1")
+               for k in range(1000))
+    # All settings: the last page is the hundred-and-somethingth, and Next
+    # stays on it
+    W6.cmd(eng, "select", arg=0)
+    W6.cmd(eng, "options")
+    W6.cmd(eng, "optgroup", arg=2)
+    assert rows_of(eng) == twin_rows(data, 2) and ui(eng, "optper") == b"9"
+    pages = (int(ui(eng, "optrows")) + 8) // 9
+    for _ in range(pages + 3):
+        W6.cmd(eng, "optpage", arg=1)
+    assert int(ui(eng, "optpg")) == pages - 1 > 100
+    # a search over a thousand
+    W6.cmd(eng, "optfind", text=b"setting 99")
+    assert [k for k, h in rows_of(eng) if h == 0 and k >= 0] == [99] + list(range(990, 1000))
+    assert rows_of(eng) == twin_rows(data, 2, b"setting 99")

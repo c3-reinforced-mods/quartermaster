@@ -282,8 +282,11 @@ def test_every_element_the_event_state_looks_up_is_created(built):
     paths = re.findall(r"qmEmElmname\+'\.([\w.]+)'", event)
     # The filter box lives in its own layer, updated in place (not rebuilt),
     # so its edit control keeps the caret through a keystroke's redraw.
+    # The Options view's two boxes - a text setting's and the search box - live
+    # in layers of their own for the same reason.
     assert sorted(set(paths)) == ["fbox.filter.text", "main.wnd.act.active",
-                                  "main.wnd.inst.installed", "nbox.nname.text", "obox.otext.text"]
+                                  "main.wnd.inst.installed", "nbox.nname.text", "obox.otext.text",
+                                  "sbox.ofind.text"]
     for p in paths:
         assert _resolve(handles, inputs, p, "qmSmParent"), \
             "%s is not created by ShowQmManager" % p

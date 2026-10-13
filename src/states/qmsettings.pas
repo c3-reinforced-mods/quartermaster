@@ -24,6 +24,7 @@ requires:
 //! loads a file (M4 runs); a text setting keeps its inner spaces only.
 //!
 //! qm_about per row i (qmUiModel copies it): `mid<i>` the child's name.
+var qmStT0 : Float = _misc_GetRealTime;
 var qmStAb : Integer = ParserSelectByKey('qm_about');
 var qmStP : Integer = ParserSelectByKey('qm_settings');
 if (qmStP=0) then
@@ -77,4 +78,4 @@ begin
       end;
    end;
 end;
-qmLog('settings loaded='+IntToStr(qmStLoaded)+' mods='+IntToStr(qmStMods)+' defaults='+IntToStr(qmStFixed)+' file='+qmStPath);
+qmLog('settings loaded='+IntToStr(qmStLoaded)+' mods='+IntToStr(qmStMods)+' defaults='+IntToStr(qmStFixed)+' file='+qmStPath+' ms='+FloatToStr((_misc_GetRealTime-qmStT0)*1000));

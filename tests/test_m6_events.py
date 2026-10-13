@@ -32,12 +32,17 @@ BUTTON = 14
 MENU_CAPTION = 15
 VERSION = 16
 FRAME = 17                 # the main menu's left frame, wnewgame (showmainmenu.inc:93)
+FIND = 18                  # the Options view's search box
+OTEXT = 19                 # ... and the box of the text setting being edited
+GROUPS = 20                # ... and its list of groups
 PATHS = {b"QmManager.fbox.filter.text": FILTER, b"QmManager.main.wnd.act.active": ACTIVE,
          b"QmManager.main.wnd.inst.installed": INSTALLED,
+         b"QmManager.sbox.ofind.text": FIND, b"QmManager.obox.otext.text": OTEXT,
          b"MainMenu.col1.row1.wnewgame.bmodman.txtbtn": MENU_CAPTION,
          b"MainMenu.col1.row1.wnewgame.ver": VERSION}
 NAMES = {FILTER: b"text", ACTIVE: b"active", INSTALLED: b"installed", BUTTON: b"bapply",
-         MENU_CAPTION: b"txtbtn", VERSION: b"ver"}
+         MENU_CAPTION: b"txtbtn", VERSION: b"ver", FIND: b"text", OTEXT: b"text",
+         GROUPS: b"ogroup"}
 #: The game's version text as showmainmenu.inc:151-173 makes it (a build, the
 #: checksum in its grey), at its y above the frame's bottom, one line high.
 GAME_VERSION = b"Version 1.0.0.123 %color(999999)% (B3CA)"
@@ -161,6 +166,10 @@ class Gui(PAS5.Engine):
 
     def n_GetGUIFocusedElementHandle(self):
         return self.focused
+
+    def n_SetGUIElementFocusedHandle(self, h):
+        self.focused = h
+        self.did.append(("focus", h))
 
     def n_GetGUIListBoxItemIndex(self, h):
         return self.items[h][0]
@@ -310,6 +319,147 @@ def test_up_and_down_send_the_selected_row():
     event(eng, b"button", b"c", 110)
     event(eng, b"button", b"c", 111)
     assert [s[:2] for s in eng.sent] == [(b"up", 2), (b"down", 2)]
+
+
+def test_the_buttons_of_every_setting_a_mod_may_declare_reach_the_controller():
+    # Tag 200 + 2 * setting + (0 the main button, 1 the other). Until 0.1.5
+    # only tags below 264 were taken: the buttons of a setting past the 32nd
+    # would have done nothing.
+    from ref import about as A
+    eng = gui()
+    last = A.MAX_SETTINGS - 1
+    for tag in (200, 201, 262, 263, 264, 266, 267, 200 + 2 * last, 201 + 2 * last):
+        event(eng, b"button", b"c", tag)
+    assert [(s[0], s[1], s[3]) for s in eng.sent] == [
+        (b"optbtn", 0, 0), (b"optbtn", 0, 1), (b"optbtn", 31, 0), (b"optbtn", 31, 1),
+        (b"optbtn", 32, 0), (b"optbtn", 33, 0), (b"optbtn", 33, 1),
+        (b"optbtn", last, 0), (b"optbtn", last, 1)]
+    # past the last setting a tag is nobody's, and so is the one below 200
+    event(eng, b"button", b"c", 200 + 2 * A.MAX_SETTINGS)
+    event(eng, b"button", b"c", 199)
+    assert len(eng.sent) == 9
+
+
+# ------------------------------------------------- the Options view's strip
+def options(**ui):
+    """The event state over an open Options view with its strip."""
+    eng = gui()
+    keys = dict(panel=2, optstrip=1, optsel=-1, optcap=-1, optq=b"")
+    keys.update(ui)
+    eng.set("qm_ui", **keys)
+    eng.texts[FILTER] = b"zoom"             # what the lists' filter was left with
+    eng.texts[FIND] = keys["optq"]
+    return eng
+
+
+def test_a_key_in_the_search_box_sends_the_search_when_its_text_changed():
+    eng = options()
+    eng.texts[FIND] = b"cam"
+    event(eng, b"key", b"u", 77)
+    assert eng.sent == [(b"optfind", -1, 0, -1, b"cam")]
+    eng.set("qm_ui", optq=b"cam")
+    event(eng, b"key", b"u", 39)            # an arrow key: the text is the same
+    assert len(eng.sent) == 1
+    # emptied by hand: a search for nothing, which shows the group again
+    eng.texts[FIND] = b""
+    event(eng, b"key", b"u", 8)
+    assert eng.sent[-1] == (b"optfind", -1, 0, -1, b"")
+
+
+def test_the_text_setting_s_box_and_the_search_box_are_told_apart_by_what_changed():
+    eng = options(optsel=6, ov6=b"qm", optq=b"cam")
+    eng.texts[OTEXT] = b"qmx"               # typed into the setting's box
+    event(eng, b"key", b"u", 88)
+    assert eng.sent == [(b"filter", -1, 0, -1, b"qmx")]
+    eng.set("qm_ui", ov6=b"qmx")
+    eng.texts[FIND] = b"came"               # typed into the search box
+    event(eng, b"key", b"u", 69)
+    assert eng.sent[-1] == (b"optfind", -1, 0, -1, b"came")
+    eng.set("qm_ui", optq=b"came")
+    event(eng, b"key", b"u", 39)            # neither changed
+    assert len(eng.sent) == 2
+
+
+def test_a_box_typed_into_has_the_keyboard_after_the_redraw():
+    # Hands-on, 2026-10-13: the search box took "ca" of "camera", three times.
+    # The window's part is not to hide the box's layer on the way; here, a
+    # redraw that takes the keyboard all the same gives it back.
+    eng = options()
+    eng.focused = FIND
+    eng.texts[FIND] = b"ca"
+    event(eng, b"key", b"u", 65)
+    # the redraw kept it: nothing to do, and no log line
+    assert ("focus", FIND) not in eng.did and not any(b"ui focus" in l for l in eng.log)
+    # a redraw that loses it
+    lost = lambda s: eng.did.append(("execute", s)) or setattr(eng, "focused", 0)   # noqa: E731
+    eng.natives["executestate"] = lost
+    eng.set("qm_ui", optq=b"ca")
+    eng.texts[FIND] = b"cam"
+    event(eng, b"key", b"u", 77)
+    assert eng.sent[-1][0] == b"optfind" and eng.focused == FIND
+    assert eng.did[-2:] == [("execute", b"ShowQmManager"), ("focus", FIND)]
+    assert any(l.endswith(b"QmManager.sbox.ofind.text; given back") for l in eng.log)
+    # the text setting's box the same way
+    eng.set("qm_ui", optq=b"cam", optsel=6, ov6=b"qm")
+    eng.focused = OTEXT
+    eng.texts[OTEXT] = b"qmx"
+    event(eng, b"key", b"u", 88)
+    assert eng.sent[-1][0] == b"filter" and eng.focused == OTEXT
+    # a button is no typing: the keyboard stays where the redraw left it
+    eng.focused = FIND
+    event(eng, b"button", b"c", 114)
+    assert eng.focused == 0 and eng.did[-1] == ("execute", b"ShowQmManager")
+    # ... and so is a key in the lists' filter, which was never the trouble
+    eng = gui()
+    eng.natives["executestate"] = lambda s: setattr(eng, "focused", 0)
+    eng.focused = FILTER
+    eng.texts[FILTER] = b"w"
+    event(eng, b"key", b"u", 87)
+    assert eng.sent[-1][0] == b"filter" and eng.focused == 0
+
+
+def test_a_command_of_the_options_view_never_carries_the_lists_filter():
+    # Enter in the search box: the controller searches for the text it gets.
+    eng = options()
+    eng.texts[FIND] = b"cam"
+    eng.focused = FIND
+    event(eng, b"key", b"u", 13)
+    assert eng.sent == [(b"enter", -1, 0, -1, b"cam")]
+    # a button with a text setting open carries that setting's text
+    eng = options(optsel=6, ov6=b"qm")
+    eng.texts[OTEXT] = b"qmx"
+    event(eng, b"button", b"c", 115)
+    assert eng.sent == [(b"optacc", -1, 0, -1, b"qmx")]
+    # a view without the strip has no search box: no text, and no search
+    eng = options(optstrip=0)
+    eng.texts[FIND] = b"left over"
+    event(eng, b"button", b"c", 116)
+    assert eng.sent == [(b"optcancel", -1, 0, -1, b"")]
+    event(eng, b"key", b"u", 77)
+    assert len(eng.sent) == 1
+
+
+def test_a_pick_in_the_list_of_groups_sends_its_entry():
+    eng = options()
+    eng.items[GROUPS] = (2, [0, 1, 2, 3])
+    event(eng, b"select", b"c", 0, GROUPS)
+    assert eng.sent == [(b"optgroup", 2, 0, -1, b"")]
+    eng.items[GROUPS] = (3, [0, 1, 2, 3])   # the last entry: all settings
+    event(eng, b"select", b"c", 0, GROUPS)
+    assert eng.sent[-1][:2] == (b"optgroup", 3)
+    # Every command draws the window again, the list with it: the entry
+    # already shown is no command, nor is the press that opens the list ...
+    eng.set("qm_ui", optgrp=3)
+    event(eng, b"select", b"c", 0, GROUPS)
+    eng.items[GROUPS] = (1, [0, 1, 2, 3])
+    event(eng, b"select", b"d", 0, GROUPS)
+    assert len(eng.sent) == 2
+    # ... but during a search the same entry is a way back to its group
+    eng.items[GROUPS] = (3, [0, 1, 2, 3])
+    eng.set("qm_ui", optq=b"cam")
+    eng.texts[FIND] = b"cam"
+    event(eng, b"select", b"c", 0, GROUPS)
+    assert eng.sent[-1][:2] == (b"optgroup", 3) and len(eng.sent) == 3
 
 
 # ------------------------------------------------------------ the rename
@@ -563,6 +713,41 @@ def test_a_harness_runs_switch_opens_the_window_once():
     PAS5.run(eng, "qmTick")
     assert eng.did == [("gui", b"ShowQmManager")] and eng.key(b"qm_rt", b"uishow") == b"0"
     assert b"[qm] tick: the window opened for the run (qm_show_ui.flag)" in eng.log
+
+
+def test_the_view_a_case_left_is_played_to_the_controller_once_the_window_is_open():
+    # A window a SelfTest case leaves open does not outlive the start-up, so
+    # the case leaves the steps to its view (qmCaseOpt `keep`).
+    eng = tick_at({}, uishow=1, gdshow=0, busy=0, rs=0, uiplayn=3,
+                  uiplayc0=b"select", uiplaya0=37, uiplayc1=b"options",
+                  uiplayc2=b"optfind", uiplayt2=b"camera")
+    eng.sent = []
+    h = eng.named[b"qm_ui"]
+    get = lambda k: eng.n_ParserGetValueByKeyByHandle(h, k)   # noqa: E731
+    eng.states["qmuiact"] = PAS5.Fake(lambda: eng.sent.append(
+        (get(b"cmd"), int(get(b"arg")), int(get(b"argside")), get(b"argtext"))))
+    PAS5.run(eng, "qmTick")
+    assert eng.sent == [(b"select", 37, 1, b""), (b"options", 0, 1, b""),
+                        (b"optfind", 0, 1, b"camera")]
+    # the window is opened, and drawn again after the steps
+    assert eng.did == [("gui", b"ShowQmManager")] * 2
+    assert (eng.key(b"qm_rt", b"uishow"), eng.key(b"qm_rt", b"uiplayn")) == (b"0", b"0")
+    assert b"[qm] tick: the window shows the view a case left, steps=3" in eng.log
+    PAS5.run(eng, "qmTick")                               # once
+    assert len(eng.sent) == 3 and len(eng.did) == 2
+    # The case runs in the boot's own frame, before the start-up builds the
+    # GUI a second time: its view waits for the time it set (tenths).
+    eng = tick_at({}, uishow=1, gdshow=0, busy=0, rs=0, uiplayn=1, uiplayc0=b"options")
+    eng.now = 100.0
+    eng.set("qm_rt", uishowat=1050)
+    PAS5.run(eng, "qmTick")
+    eng.now = 104.9
+    PAS5.run(eng, "qmTick")
+    assert eng.did == [] and eng.key(b"qm_rt", b"uishow") == b"1"
+    eng.now = 105.0
+    PAS5.run(eng, "qmTick")
+    assert eng.did == [("gui", b"ShowQmManager"), ("run", "qmUiAct"), ("gui", b"ShowQmManager")]
+    assert (eng.key(b"qm_rt", b"uishow"), eng.key(b"qm_rt", b"uishowat")) == (b"0", b"0")
 
 
 @pytest.mark.parametrize("shown", [True, False])

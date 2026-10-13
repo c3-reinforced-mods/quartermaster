@@ -1,7 +1,7 @@
 screen: EventQmManager
 into: data/quartermaster/ui/eventqmmanager.inc
 helpers: qmlog
-requires: version
+requires: version, maxsettings
 ---
 //! Events of the manager window. A GUI state, so it can read the event values
 //! (capability probes, probe 9a); it only translates each event into one
@@ -254,12 +254,29 @@ begin
    if (qmEmHnd<>0) then
    qmEmText := GetGUIElementText(qmEmHnd);
 end;
-// In the Options view a text setting is edited in its own box (layer obox).
-if (ParserGetIntValueByKeyByHandle(qmEmUi, 'panel')=2) and (ParserGetIntValueByKeyByHandle(qmEmUi, 'optsel')>=0) then
+//! The Options view has two boxes of its own: the search box of its strip
+//! (layer sbox; qm_ui optstrip) and, while a text setting is edited (optsel),
+//! that setting's box (layer obox). A command carries the edited text while
+//! there is one, else the search text - never the lists' filter, which this
+//! view does not show.
+var qmEmFind : String = '';
+var qmEmBox : String = '';
+if (ParserGetIntValueByKeyByHandle(qmEmUi, 'panel')=2) then
 begin
-   qmEmHnd := GetGUIElementIndexByNameParent(qmEmElmname+'.obox.otext.text', _gui_GetTop);
-   if (qmEmHnd<>0) then
-   qmEmText := GetGUIElementText(qmEmHnd);
+   qmEmText := '';
+   if (ParserGetIntValueByKeyByHandle(qmEmUi, 'optstrip')=1) then
+   begin
+      qmEmHnd := GetGUIElementIndexByNameParent(qmEmElmname+'.sbox.ofind.text', _gui_GetTop);
+      if (qmEmHnd<>0) then
+      qmEmFind := GetGUIElementText(qmEmHnd);
+   end;
+   qmEmText := qmEmFind;
+   if (ParserGetIntValueByKeyByHandle(qmEmUi, 'optsel')>=0) then
+   begin
+      qmEmHnd := GetGUIElementIndexByNameParent(qmEmElmname+'.obox.otext.text', _gui_GetTop);
+      if (qmEmHnd<>0) then
+      qmEmText := GetGUIElementText(qmEmHnd);
+   end;
 end;
 //! A key setting waiting for its key (qm_ui optcap, the Options view): the
 //! key's down event, named the way vanilla's hotkey window names it
@@ -329,13 +346,27 @@ begin
       qmEmRef := ParserGetValueByKeyByHandle(qmEmUi, 'vq');
       if (ParserGetIntValueByKeyByHandle(qmEmUi, 'panel')=2) then
       begin
-         if (ParserGetIntValueByKeyByHandle(qmEmUi, 'optsel')<0) then
-         exit;
-         qmEmRef := ParserGetValueByKeyByHandle(qmEmUi, 'ov'+IntToStr(ParserGetIntValueByKeyByHandle(qmEmUi, 'optsel')));
+         //! The search box's text changed: a search, whatever else is open.
+         if (ParserGetIntValueByKeyByHandle(qmEmUi, 'optstrip')=1) and (qmEmFind<>ParserGetValueByKeyByHandle(qmEmUi, 'optq')) then
+         begin
+            qmEmCmd := 'optfind';
+            qmEmText := qmEmFind;
+            qmEmBox := qmEmElmname+'.sbox.ofind.text';
+         end
+         else
+         begin
+            if (ParserGetIntValueByKeyByHandle(qmEmUi, 'optsel')<0) then
+            exit;
+            qmEmRef := ParserGetValueByKeyByHandle(qmEmUi, 'ov'+IntToStr(ParserGetIntValueByKeyByHandle(qmEmUi, 'optsel')));
+            qmEmBox := qmEmElmname+'.obox.otext.text';
+         end;
       end;
-      if (qmEmText=qmEmRef) then
-      exit;
-      qmEmCmd := 'filter';
+      if (qmEmCmd='') then
+      begin
+         if (qmEmText=qmEmRef) then
+         exit;
+         qmEmCmd := 'filter';
+      end;
    end;
 end
 else
@@ -348,6 +379,16 @@ begin
    qmEmCmd := 'select';
    if (qmEmList='vfiles') then
    qmEmCmd := 'vselect';
+   //! The Options view's list of groups: the entry picked. Not on the press,
+   //! as vanilla takes a combo box's pick (eventsettings.inc:455), and only
+   //! a pick that changes what is shown: every command draws the window
+   //! again, list included, and a list made anew while it opens would shut
+   //! under the player's hand.
+   if (qmEmList='ogroup') and (qmEmPress<>'d') then
+   begin
+      if (qmEmArg<>ParserGetIntValueByKeyByHandle(qmEmUi, 'optgrp')) or (ParserGetValueByKeyByHandle(qmEmUi, 'optq')<>'') then
+      qmEmCmd := 'optgroup';
+   end;
    if (qmEmList='active') then
    begin
       qmEmCmd := 'select';
@@ -430,8 +471,10 @@ begin
       qmEmCmd := 'optpage';
       qmEmArg := 1;
    end;
-   //! A setting's buttons: tag 200 + 2 * setting + (0 main, 1 the other).
-   if (qmEmTag=qmTagOptRow) or ((qmEmTag>qmTagOptRow) and (qmEmTag<qmTagOptRow+64)) then
+   //! A setting's buttons: tag 200 + 2 * setting + (0 main, 1 the other), for
+   //! every setting a mod may declare: 200-2199 (until 0.1.5 the first 32
+   //! only: the rest would have had buttons that did nothing).
+   if (qmEmTag=qmTagOptRow) or ((qmEmTag>qmTagOptRow) and (qmEmTag<qmTagOptRow+${maxsettings}*2)) then
    begin
       qmEmCmd := 'optbtn';
       qmEmArg := (qmEmTag-qmTagOptRow) div 2;
@@ -518,4 +561,21 @@ begin
    SetGUIEventStateOnKeyDown('');
 end
 else
-ExecuteState(qmEmShowstate);
+begin
+   ExecuteState(qmEmShowstate);
+   //! A key typed into one of the Options view's boxes: the box has the
+   //! keyboard after the redraw as before it. Its layer is updated in place
+   //! and never hidden on the way (showqmmanager.pas), which is what keeps
+   //! it; should a redraw take it all the same, it is given back the way
+   //! vanilla gives a chat box the keyboard (eventclans.inc:61), and the log
+   //! says so.
+   if (qmEmBox<>'') then
+   begin
+      qmEmHnd := GetGUIElementIndexByNameParent(qmEmBox, _gui_GetTop);
+      if (qmEmHnd<>0) and (GetGUIFocusedElementHandle<>qmEmHnd) then
+      begin
+         SetGUIElementFocusedHandle(qmEmHnd);
+         qmLog('ui focus: the redraw took the keyboard from '+qmEmBox+'; given back');
+      end;
+   end;
+end;

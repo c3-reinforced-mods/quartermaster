@@ -85,6 +85,118 @@ def test_bad_settings_are_dropped_with_a_warning():
         b"setting-default", b"setting-options", b"setting-default", b"setting-twice"]
 
 
+def many(n):
+    return about(b"".join(b"setting = s%d;bool;1;Setting %d\n" % (k, k) for k in range(n)))
+
+
+def test_a_mod_may_declare_a_thousand_settings_and_the_next_one_is_dropped():
+    # Until 0.1.5 the limit was 32, which Reinforced - Core reached.
+    a = many(40)
+    assert len(a.settings) == 40 and a.problems == []
+    assert A.MAX_SETTINGS == 1000 and A.RAW_SETTINGS == 1024
+    a = many(A.MAX_SETTINGS)
+    assert len(a.settings) == A.MAX_SETTINGS and a.problems == []
+    a = many(A.MAX_SETTINGS + 2)
+    assert [s.id for s in a.settings] == [b"s%d" % k for k in range(A.MAX_SETTINGS)]
+    assert a.problems == [
+        A.Problem(b"WARN", b"setting-many", b"more than 1000 settings; setting s1000 dropped"),
+        A.Problem(b"WARN", b"setting-many", b"more than 1000 settings; setting s1001 dropped")]
+
+
+def test_a_group_line_titles_the_settings_after_it():
+    a = about(b"setting = top;bool;1;Before any group\n"
+              b"group = Match interface\n"
+              b"setting = a;bool;1;A\n"
+              b"setting = b;bool;1;B\n"
+              b"group =\n"
+              b"setting = c;bool;1;C\n"
+              b"GROUP =  Camera | keys \n"
+              b"setting = bad;colour;1;Bad\n"
+              b"setting = d;key;F;D\n"
+              b"group = Nothing under it\n"
+              b"group = Last\n"
+              b"setting = e;int;1;E;1..3\n")
+    assert [(s.id, s.group) for s in a.settings] == [
+        (b"top", b""), (b"a", b"Match interface"), (b"b", b"Match interface"),
+        (b"c", b"Match interface"), (b"d", b"Camera ~124 keys"), (b"e", b"Last")]
+    assert a.problems == [
+        A.Problem(b"WARN", b"group", b"line 5: group needs a title; ignored"),
+        A.Problem(b"WARN", b"setting-type",
+                  b"setting bad: type 'colour' is not one of bool, int, float, choice, key, text")]
+
+
+def grouped(*sizes):
+    """Settings in groups: `(title, count)` each, in order."""
+    out = []
+    for title, count in sizes:
+        for _ in range(count):
+            s = A.Setting(b"s%d" % len(out), b"bool", b"1", b"Setting")
+            s.group = title
+            out.append(s)
+    return out
+
+
+def layout(*sizes):
+    """option_rows as one letter a row: s a setting, H a title, M a title
+    again, . an empty row; a space between pages."""
+    letter = {b"set": "s", b"head": "H", b"more": "M", b"none": "."}
+    rows = "".join(letter[kind] for kind, _k in A.option_rows(grouped(*sizes)))
+    return " ".join(rows[i:i + 10] for i in range(0, len(rows), 10))
+
+
+def test_without_groups_the_rows_are_the_settings():
+    for n in (0, 1, 10, 11, 40):
+        assert A.option_rows(grouped((b"", n))) == [(b"set", k) for k in range(n)]
+
+
+def test_a_group_starts_with_its_title_and_stays_on_one_page_when_it_can():
+    assert layout((b"", 3), (b"A", 5)) == "sssHsssss"
+    # the title and the group fill the page exactly: nothing is moved
+    assert layout((b"A", 4), (b"B", 4), (b"C", 4)) == "HssssHssss Hssss"
+    # six rows do not fit the three left: the group starts the next page
+    assert layout((b"A", 6), (b"B", 5)) == "Hssssss... Hsssss"
+    # a title never stands at the foot of a page
+    assert layout((b"", 9), (b"A", 1)) == "sssssssss. Hs"
+    assert layout((b"A", 8), (b"B", 1)) == "Hssssssss. Hs"
+    # the rows name their settings
+    assert A.option_rows(grouped((b"", 1), (b"A", 2))) == [
+        (b"set", 0), (b"head", 1), (b"set", 1), (b"set", 2)]
+
+
+def test_a_group_longer_than_a_page_runs_on_under_its_title():
+    assert layout((b"A", 12), (b"B", 2)) == "Hsssssssss MsssHss"
+    assert layout((b"", 2), (b"A", 12)) == "ss........ Hsssssssss Msss"
+    assert layout((b"A", 19)) == "Hsssssssss Msssssssss Ms"
+    rows = A.option_rows(grouped((b"A", 12)))
+    assert rows[10] == (b"more", 9) and rows[11] == (b"set", 9)
+
+
+def test_the_same_title_twice_in_a_row_is_one_group():
+    assert layout((b"A", 2), (b"A", 2), (b"B", 1), (b"A", 1)) == "HssssHsHs"
+
+
+def test_the_rows_keep_every_setting_once_and_no_title_alone():
+    import random
+    rnd = random.Random(7)
+    for _ in range(300):
+        st = grouped(*[(rnd.choice([b"A", b"B", b"C", b"D"]), rnd.randint(1, 14))
+                       for _ in range(rnd.randint(1, 9))])
+        # only the first settings can stand under no group
+        for s in st[:rnd.randint(0, 12)]:
+            s.group = b""
+        rows = A.option_rows(st)
+        assert [k for kind, k in rows if kind == b"set"] == list(range(len(st)))
+        for j, (kind, k) in enumerate(rows):
+            if kind in (b"head", b"more"):
+                assert rows[j + 1] == (b"set", k) and j % 10 != 9
+                assert st[k].group != b""
+            if kind == b"none":
+                assert j % 10 != 0
+            if kind == b"set" and j % 10 == 0:
+                assert st[k].group == b""
+        assert rows[-1][0] == b"set"
+
+
 def test_a_mod_answers_to_its_id_and_its_folder():
     assert A.names(WS + b"1325221799", None) == [b"1325221799"]
     assert A.names(b"mods\\QMTestWASD", about(b"id = wasd\n")) == [b"wasd", b"qmtestwasd"]

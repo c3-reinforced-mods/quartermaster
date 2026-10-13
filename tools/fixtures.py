@@ -43,6 +43,8 @@ The four mods and the edge each one exercises:
                   Quartermaster settings (Phase B, M10); marker `QMTEST wasd2
                   keys` with the keys it registered. An alternative to
                   QMTestWASD, never loaded with it.
+  QMTestMany      only an about.cfg: 40 settings under `group` lines, more
+                  than the 32 a mod could declare until 0.1.5
 """
 import argparse
 import hashlib
@@ -64,7 +66,8 @@ CAMSPEED = "QMTestCamSpeed"
 CONFLICT = "QMTestConflict"
 BROKEN = "QMTestBroken"
 FIXTURES = (WASD, CAMSPEED, CONFLICT, BROKEN, "QMTestWASD2", "QMTestCam2", "QMTestDataA",
-            "QMTestDataB", "QMTestDataA6", "QMTestDataB6")  # Phase B: build_wasd2, CAM2, build_data
+            "QMTestDataB", "QMTestDataA6", "QMTestDataB6",  # Phase B: build_wasd2, CAM2, build_data
+            "QMTestMany")                                   # 0.1.6: many_about
 
 REGISTERSHORTCUTS = "data/gui/menu.inc/registershortcuts.inc"
 ONCAMERA = "data/gui/menu.inc/oncamera.inc"
@@ -287,6 +290,38 @@ CAM2_ABOUT = CRLF.join([b"# about.cfg of the Quartermaster test mod QMTestCam2 (
                         b"exclusive = camera"]) + CRLF
 
 
+# --------------------------------------------------------------- QMTestMany
+#: More settings than the 32 a mod could declare until 0.1.5, under `group`
+#: lines (docs/authoring.md): no game file, only an about.cfg. 40 settings
+#: s0 ... s39 - two before any group, then groups of 6, 12 (longer than a
+#: page), 9 and 11, the last one holding every setting past the old limit:
+#: five entries in the Options view's list of groups, and seven pages for all
+#: of them together. Switch, `-` / `+` and `<` / `>` only: no key setting, so
+#: no key of the player's game can meet one.
+MANY = "QMTestMany"
+MANY_GROUPS = ((b"", 2), (b"Match interface", 6), (b"Economy and trade", 12), (b"Camera", 9),
+               (b"Past the old limit of 32", 11))
+
+
+def many_about():
+    lines = [b"# about.cfg of the Quartermaster test mod QMTestMany (docs/authoring.md)",
+             b"id = qmtestmany",
+             b"name = QMTestMany"]
+    k = 0
+    for title, count in MANY_GROUPS:
+        if title:
+            lines.append(b"group = " + title)
+        for _ in range(count):
+            if k % 10 == 1:
+                lines.append(b"setting = s%d;int;3;Setting %d, a number;1..5" % (k, k))
+            elif k % 10 == 7:
+                lines.append(b"setting = s%d;choice;mid;Setting %d, a choice;low|mid|high" % (k, k))
+            else:
+                lines.append(b"setting = s%d;bool;1;Setting %d, a switch" % (k, k))
+            k += 1
+    return CRLF.join(lines) + CRLF
+
+
 # ------------------------------------------------------------ QMTestData*
 #: The data merge (plan S3, S10; M9). Each mod adds one formation - a copy of
 #: vanilla's LINE3 record under a new id, so it is a formation the loader can
@@ -418,6 +453,7 @@ def build_all(game=None, reference=None):
         BROKEN: build_broken(game),
         WASD2: build_wasd2(wasd),
         CAM2: {"about.cfg": CAM2_ABOUT},
+        MANY: {"about.cfg": many_about()},
     }
     mods.update(build_data(game))
     for name, files in mods.items():

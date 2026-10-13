@@ -168,14 +168,16 @@ while the enabled mods' order is not the canonical one (`qm_order` `canon` =
 | `ok` | OK of the guard's notice; Enter or Esc in mode 3 | back to browsing (`mode` = 0) |
 | `confirm` / `cancel` | dialog buttons | `confirm` runs `qmUiApply`; a recorded request shows the restart notice (`mode` = 2); `cancel` closes the dialog |
 | `filter` | a key's release in the filter box when its text changed; `argtext` = the text | filter the Installed list |
-| `esc` | Esc | `cancel` in the dialog, `report` (back) in the Report view, else `close` |
-| `enter` | Enter | `confirm` in the dialog, else `filter` |
+| `esc` | Esc | `cancel` in the dialog, `report` (back) in the Report view; in the Options view `optkey` without a key while one is waited for, `optfind` without a text while the search box holds one, else `optcancel`; else `close` |
+| `enter` | Enter | `confirm` in the dialog, else `filter` - which in the Options view is `optfind` while no text setting is edited and the view has its strip |
 | `workshop` | Open Workshop (the event state already called `OpenURL`) | log only |
 | `autosort` | Auto-sort (tag 119) | the pending order becomes the canonical one (`cord<k>`: about.cfg rules, then Workshop id / folder name); `ordchg` again |
 | `options` | Options (tag 118), a row with settings selected | open the Options view (`panel` = 2) with an edit copy of the row's settings (below) |
-| `optbtn` | a setting's button; `arg` = the setting, `argto` = 0 the main button, 1 the other | bool switches; int / float `+` (0) or `-` (1) one step, clamped; choice the next (0) or previous (1) option, round the list; key waits for a key (`optcap`); text points the Options text box at it (`optsel`) |
+| `optbtn` | a setting's button (tag 200 + 2 * the setting, + 1 for the other button: 200-2199 for the thousand settings a mod may declare, the engine's own tags starting at 8003; until 0.1.5 the event state took 200-263 only, the first 32); `arg` = the setting, `argto` = 0 the main button, 1 the other | bool switches; int / float `+` (0) or `-` (1) one step, clamped; choice the next (0) or previous (1) option, round the list; key waits for a key (`optcap`); text points the Options text box at it (`optsel`) |
 | `optkey` | the key a capture took (`argtext`, '' for Esc) | checked (below) and taken into the edit copy, or refused with the reason |
-| `optpage` | Previous / Next (tags 113, 114); `arg` = -1 / 1 | the Options page, ten settings each |
+| `optpage` | Previous / Next (tags 113, 114); `arg` = -1 / 1 | the Options page, `optper` rows each (`optrows`) |
+| `optgroup` | a pick in the Options view's list of groups (a `select` of the element `ogroup`); `arg` = the entry, the last one all settings | that group's settings alone, or all of them under their titles; ends a search; the first page |
+| `optfind` | a key's release in the Options view's search box when its text changed; `argtext` = the text | the settings whose label or whose group's title holds the text, of every group; no text: the list's group again; the first page |
 | `optdef` | Defaults (tag 117) | every setting of the edit copy back to its declared default |
 | `optcancel` | Cancel (tag 116), Esc in the Options view | back to the lists, the edit copy dropped |
 | `optacc` | Accept (tag 115) | the edit copy into `qm_settings`, `qm_rt` `setsave` for the file, `rereg` for new keys; back to the lists |
@@ -494,7 +496,13 @@ the same one cannot both load (twin: `ref/guard.py`, which has the rules).
   clear there is no line.
 - **Run switches** (a test run's seeded `<save>\quartermaster\`, no player has
   them): `qm_show_ui.flag` opens the window on the first main-menu frame
-  (`qm_rt` `uishow`); `qm_skirmish.flag` walks the game into a skirmish on a
+  (`qm_rt` `uishow`; a SelfTest case that wants its view looked at leaves
+  the steps to it - `uiplayn`, and per step `uiplayc<k>` the command,
+  `uiplaya<k>` its number, `uiplayt<k>` its text - and the time before which
+  the window does not open, `uishowat` in tenths of a second, because a
+  window a case leaves open does not outlive the start-up's second build of
+  the GUI: qmCaseOpt `keep`);
+  `qm_skirmish.flag` walks the game into a skirmish on a
   stable start (`qm_rt` `skphase`, `skt`: ShowCustomGame, then DoNewGame, as
   the SW_Frontline_Protocol autotest does) - log lines `[qm] run: ...`.
 - **The window**: `qmUiModel` marks an enabled row that clashes WARN when
@@ -691,7 +699,7 @@ record manager aside, initmapgen.inc:70-71 and :248-250).
 |---|---|
 | `qm_abin` (written by the caller) | `n`, `on<i>` (1 active), `ord<k>` (every row in load order); `n` = 0 skips the check |
 | `qm_abr` (written by qmAbRules) | `n` (at most 64), `row<k>`, `tag<k>` (FAIL / WARN), `code<k>`, `text<k>`, `oth<k>` (the other row or -1), `fail` |
-| `qm_about` (written by qmAbout, read here) | `n`, `dir<i>`, `id<i>`, `nm<i>` (the names a row answers to, `|a|b|`), `pn<i>` with `pt<i>_<k>` / `px<i>_<k>` (the file's problems), `sn<i>` with per setting `sid<i>_<k>`, `sty<i>_<k>`, `sdf<i>_<k>`, `slb<i>_<k>`, `ssc<i>_<k>`, `slo<i>_<k>`, `shi<i>_<k>`, `sst<i>_<k>`, `sdc<i>_<k>`, `sop<i>_<k>`, `smx<i>_<k>`; the full list is in src/states/qmabout.pas |
+| `qm_about` (written by qmAbout, read here) | `n`, `dir<i>`, `id<i>`, `nm<i>` (the names a row answers to, `|a|b|`), `pn<i>` with `pt<i>_<k>` / `px<i>_<k>` (the file's problems), `sn<i>` with per setting `sid<i>_<k>`, `sty<i>_<k>`, `sdf<i>_<k>`, `slb<i>_<k>`, `ssc<i>_<k>`, `slo<i>_<k>`, `shi<i>_<k>`, `sst<i>_<k>`, `sdc<i>_<k>`, `sop<i>_<k>`, `smx<i>_<k>`, `sgr<i>_<k>` (the title of the `group` line the setting stands under); the full list is in src/states/qmabout.pas |
 
 ## Options view (plan G16, M10)
 
@@ -702,10 +710,56 @@ one value per setting id; loaded at every boot by qmSettings from
 `<save>\quartermaster\settings.cfg`, defaults filled in). Options (tag 118)
 is enabled for a selected row with `abs<i>` > 0.
 
-- **The view** (`panel` = 2) replaces the lists, ten settings a page
-  (`optpg`; Previous / Next when there are more): label, the edited value -
-  green while it differs from the stored one - and the buttons of its type
-  (below). A label that does not fit its column takes a second line: broken
+- **The view** (`panel` = 2) replaces the lists, ten rows a page
+  (`optpg`; Previous / Next when there are more). A row is a setting: label,
+  the edited value - green while it differs from the stored one - and the
+  buttons of its type (below). Without `group` lines in the about.cfg, and
+  with no more settings than a page holds, row `<j>` is setting `<j>` and the
+  view is the one of 0.1.5.
+- **The strip** (since 0.1.6; `optstrip` = 1 for a mod with groups or with
+  more settings than a page holds - Reinforced - Core, with one switch a
+  function, had come to a flat list of 35 settings on four pages). It stands
+  over the rows, where the lists' filter stands in the main view, and the
+  rows start where the lists do: a page has nine of them then (`optper`),
+  48 apart as always. In it:
+  - the list of groups, when the about.cfg has `group` lines: vanilla's
+    combo box `ogroup`, made and filled as the campaign window makes its
+    difficulty list (showcampaign.inc:101-110), a pick arriving as a
+    `select` of the element like a list's (eventcampaign.inc:16-33). An
+    entry a group (`ogt<g>` with its `ogc<g>` settings in brackets), in the
+    order the titles first appear; the settings under no group are the entry
+    `General`; the last entry, `All settings`, is every setting. An entry's
+    tag is its place. The open list shows twelve entries and scrolls the
+    rest. It is made after the rows, so that the open list lies over them
+    (to be seen in the game);
+  - the search box `ofind`, in a layer of its own (`sbox`, updated in place
+    like the filter box, so a keystroke's redraw keeps caret and focus).
+- **What the rows show** (qmUiAct qmUaOptView; the twin is ref/about.py
+  `option_view`): the view opens on the first entry of the list
+  (`optgrp` = 0), which without groups is every setting. A group picked
+  shows its settings alone, a row each, no title: the list says which group
+  it is. A search text (`optq`) shows the settings whose label or whose
+  group's title holds it, case folded with the engine's StrToLowerCase, of
+  every group and whatever the list showed; the head says how many
+  (`- <n> found`), with none the rows say so, and the list shows its last
+  entry, All settings, while the search is on (`optgrp` keeps the group,
+  which comes back when the box is emptied). Picking a group ends the
+  search; Esc empties the box first and leaves the view only after that.
+  Either ends a key capture and the editing of a text setting, whose value
+  so far stays in the edit copy; Accept and Defaults always mean every
+  setting, whatever is shown.
+- **Titles.** All settings and a search show the settings under their
+  groups' titles (`sgr<i>_<k>`, copied to `ogr<k>`): a group starts with a
+  row for its title, and when the title and the whole group do not fit the
+  rest of the page they start the next one, the rows left over staying empty
+  - so a title never stands alone at the foot of a page, and a group that
+  fits a page under its title is never split. A longer one runs on, and
+  each further page of it starts with the title again, marked
+  `(continued)`. The title is drawn in the font of the dialogs' titles
+  (serif 16), at the foot of its row, cut with `...` where the row ends
+  (`ogh<r>`, `<r>` the row of the page). The elements and the button tags of
+  a setting keep the setting's number, whatever row it is on.
+- **A label** that does not fit its column takes a second line: broken
   at the last space that fits, and what the second line cannot hold is cut
   with `...` (qmSmLabel, measured in the font it is drawn in; until 0.1.4 a
   label had one line, measured in a smaller font than it was drawn in, so a
@@ -750,9 +804,18 @@ is enabled for a selected row with `abs<i>` > 0.
 - **Keys of `qm_ui`**: `opt` (the row), `optmid` (its id in `qm_settings`),
   `optn`, `optpg`, `optcap`, `optsel`, and per setting `<k>`: `oid<k>`,
   `oty<k>`, `olb<k>`, `odf<k>`, `olo<k>`, `ohi<k>`, `ost<k>`, `odc<k>`,
-  `oop<k>`, `omx<k>`, `osc<k>` (the declaration, copied from `qm_about`;
-  a label of scope `host` says that the host decides it in multiplayer),
-  `ovs<k>` (stored) and `ov<k>` (edited).
+  `oop<k>`, `omx<k>`, `osc<k>`, `ogr<k>` (the declaration, copied from
+  `qm_about`; a label of scope `host` says that the host decides it in
+  multiplayer; `ogr<k>` is the title of its group, empty without one),
+  `ovs<k>` (stored) and `ov<k>` (edited). The strip: `optstrip`, `optper`
+  (rows a page: 9 with it, 10 without), `ogn` (entries of the list of
+  groups, 0 without `group` lines) with `ogt<g>` (the title, '' for the
+  settings under no group) and `ogc<g>` (its settings), `optgrp` (the entry
+  shown; `ogn` = all settings), `optq` (the search text). The rows:
+  `optshown` and `osv<i>` (the settings shown, in their order), `optrows`,
+  and per row `<j>` of the view `orw<j>` (the setting, -1 for an empty row)
+  and `orh<j>` (0 the setting itself, 1 the title of its group, 2 that title
+  on a page the group runs on to).
 
 ## Create mod, Mod files (plan G17, M11)
 

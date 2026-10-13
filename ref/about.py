@@ -16,6 +16,7 @@ the same values byte for byte.
     type = mod
     exclusive = camera
     requires = 1325221799; mybase>=2.0
+    group = Camera keys
     setting = camera_left;key;A;Camera left
 
 Line rules: spaces and tabs around a line, a key and a value are dropped;
@@ -23,7 +24,9 @@ an empty line or one whose first character is `#` is skipped; any other line
 must hold `=` - the key is the text before the first one, ASCII case folded,
 the value the text after it. Lists are `;`-separated, empty items dropped.
 List keys may repeat (their items add up), `setting` repeats by design, a
-scalar key given twice keeps its last value (WARN).
+scalar key given twice keeps its last value (WARN). `group` is a heading: the
+settings after it, up to the next `group`, are shown under its title
+(option_rows).
 
 Problems: FAIL for a value Quartermaster must be able to trust to keep the
 game starting - `id`, `type`, `exclusive`, `requires`, `extends`; WARN for
@@ -38,7 +41,9 @@ __all__ = ["FILE_NAME", "TYPES", "SLOTS", "SETTING_TYPES", "MAX_SETTINGS", "Sett
            "About", "parse", "parse_lines", "version_tuple", "cmp_version", "names",
            "Problem", "Row", "rules", "edges", "topo_order", "draft", "unescape_text",
            "canonical_v2", "Plan", "fixed_text", "parse_setting", "RuleProblem",
-           "KNOWN_DIR", "WORKSHOP_PREFIX", "known_name"]
+           "KNOWN_DIR", "WORKSHOP_PREFIX", "known_name", "ROWS_A_PAGE", "option_rows",
+           "STRIP_ROWS", "GENERAL", "ALL_SETTINGS", "option_groups", "option_strip",
+           "option_page", "option_shown", "option_view"]
 
 FILE_NAME = b"about.cfg"
 #: Quartermaster's own list (docs/authoring.md): an about.cfg per Workshop mod
@@ -59,13 +64,22 @@ def known_name(d):
 TYPES = (b"mod", b"totalconversion", b"library")
 SLOTS = (b"camera", b"ai", b"ui", b"balance", b"economy", b"sound", b"graphics", b"hotkeys")
 SETTING_TYPES = (b"bool", b"int", b"float", b"choice", b"key", b"text")
-MAX_SETTINGS = 32
-RAW_SETTINGS = 128      # setting lines the game side keeps while it reads a file
+#: Until 0.1.5 a mod had 32 settings at most, and a mod with a switch for
+#: every function reached it. 1000 is not a number a mod is meant to come
+#: near: it only bounds what a file can ask of the reader, which keeps the
+#: `setting` lines in an array until the rest of the file is read. Nothing
+#: else is sized by it: a setting's elements in the window are named by its
+#: number, and its two button tags, 200 + 2 * number, end at 2199, far below
+#: the engine's own (8003 and up).
+MAX_SETTINGS = 1000
+RAW_SETTINGS = 1024     # setting lines the game side keeps while it reads a file
+ROWS_A_PAGE = 10        # rows of the Options view
 
 SCALAR = (b"id", b"name", b"version", b"quartermaster", b"gamebuild", b"type", b"extends")
 LISTS = (b"exclusive", b"requires", b"loadafter", b"loadbefore", b"incompatiblewith",
          b"compatiblewith", b"extradirs")
 REPEATED = (b"setting",)
+GROUP = b"group"
 
 TAB = b"~009"
 BOM = b"~239~187~191"
@@ -132,7 +146,8 @@ class Setting(object):
     integer text; float a fixed-point text with `decimals` places; choice one
     of `options`; key and text as written. Numbers carry `lo`, `hi`, `step`
     as integers scaled by 10^decimals (float) - integer arithmetic on both
-    sides, so the game and the twin show the same text.
+    sides, so the game and the twin show the same text. `group` is the title
+    of the `group` line the setting stands under, empty without one.
     """
 
     def __init__(self, sid, kind, default, label, extra=b"", scope=b"local"):
@@ -142,6 +157,7 @@ class Setting(object):
         self.lo = self.hi = self.step = None
         self.decimals = 0
         self.maxlen = 0
+        self.group = b""
 
     def __repr__(self):
         return "Setting(%r, %r, %r)" % (self.id, self.kind, self.default)
@@ -314,6 +330,7 @@ def parse_lines(lines):
     a.present = True
     seen = set()
     raw = {k: [] for k in LISTS + REPEATED}
+    group = b""
     for n, line in enumerate(lines, 1):
         if n == 1 and line.startswith(BOM):
             line = line[len(BOM):]
@@ -331,10 +348,18 @@ def parse_lines(lines):
                                           b"line %d: %s is given twice; the last one counts" % (n, key)))
             seen.add(key)
             a.values[key] = value
+        elif key == GROUP:
+            if value == b"":
+                a.problems.append(Problem(b"WARN", b"group",
+                                          b"line %d: group needs a title; ignored" % n))
+            else:
+                group = value
         elif key in REPEATED and len(raw[key]) >= RAW_SETTINGS:
             a.problems.append(Problem(b"WARN", b"setting-lines",
                                       b"line %d: more than %d setting lines; ignored" % (n, RAW_SETTINGS)))
-        elif key in LISTS or key in REPEATED:
+        elif key in REPEATED:
+            raw[key].append((group, value))
+        elif key in LISTS:
             raw[key].append(value)
         else:
             a.problems.append(Problem(b"WARN", b"unknown",
@@ -407,7 +432,7 @@ def parse_lines(lines):
     for value in raw[b"extradirs"]:
         a.extradirs += _items(value)
     ids = set()
-    for value in raw[b"setting"]:
+    for group, value in raw[b"setting"]:
         s = parse_setting(value, a.problems)
         if s is None:
             continue
@@ -420,8 +445,102 @@ def parse_lines(lines):
                                       b"more than %d settings; setting %s dropped" % (MAX_SETTINGS, s.id)))
             continue
         ids.add(s.id)
+        s.group = group
         a.settings.append(s)
     return a
+
+
+def option_rows(settings, page=ROWS_A_PAGE, shown=None, titles=True):
+    """The rows of the Options view for the settings `shown` (indices in
+    their order; all of them when None), `page` rows a page: `(kind, k)` with
+    kind `set` (setting k), `head` (the title of setting k's group), `more`
+    (that title again, on a page a group runs on to) or `none` (an empty row,
+    k = -1). Without `titles` a row a setting and nothing else.
+
+    Settings without a group follow each other as they are declared, which is
+    all an about.cfg without `group` lines has. A group starts with its title;
+    when the title and the whole group do not fit the rest of the page, they
+    start the next one - so a title never stands alone at the foot of a page,
+    and a group that fits a page under its title is never split."""
+    shown = list(range(len(settings))) if shown is None else list(shown)
+    if not titles:
+        return [(b"set", k) for k in shown]
+    rows = []
+    names = [T.unescape(settings[k].group) for k in shown]
+    for i, k in enumerate(shown):
+        title = names[i]
+        if title != b"" and (i == 0 or names[i - 1] != title):
+            size = 1
+            while i + size < len(names) and names[i + size] == title:
+                size += 1
+            used = len(rows) % page
+            if used and 1 + size > page - used:
+                rows += [(b"none", -1)] * (page - used)
+            rows.append((b"head", k))
+        elif title != b"" and len(rows) % page == 0:
+            rows.append((b"more", k))
+        rows.append((b"set", k))
+    return rows
+
+
+#: The Options view of a mod with groups, or with more settings than a page
+#: holds, has a strip over its rows - the list of groups and the search box -
+#: and a row less for it.
+STRIP_ROWS = 9
+#: What the list of groups calls the settings that stand under no group.
+GENERAL = b"General"
+ALL_SETTINGS = b"All settings"
+
+
+def option_groups(settings):
+    """The entries of the Options view's list of groups: `(title, count)` in
+    the order the titles first appear, the settings under no group as an entry
+    with the title b"" (shown as GENERAL). Empty when no setting has a group:
+    the view has no list then."""
+    titles = [T.unescape(s.group) for s in settings]
+    if not any(titles):
+        return []
+    out = []
+    for t in titles:
+        for i, (title, count) in enumerate(out):
+            if title == t:
+                out[i] = (title, count + 1)
+                break
+        else:
+            out.append((t, 1))
+    return out
+
+
+def option_strip(settings):
+    return bool(option_groups(settings)) or len(settings) > ROWS_A_PAGE
+
+
+def option_page(settings):
+    return STRIP_ROWS if option_strip(settings) else ROWS_A_PAGE
+
+
+def option_shown(settings, group, query=b""):
+    """`(indices, titles)`: the settings the view shows, and whether with
+    their groups' titles. A search text shows the settings whose label or
+    whose group's title holds it (ASCII case folded here; the game folds with
+    the engine's StrToLowerCase, which knows the player's code page too), of
+    every group and under the titles; else `group` - an entry of
+    option_groups - shows that group's settings alone, and any other number
+    (the list's last entry, ALL_SETTINGS) all of them under their titles."""
+    groups = option_groups(settings)
+    if query != b"":
+        q = query.lower()
+        return [k for k, s in enumerate(settings)
+                if q in (T.unescape(s.label) + b"|" + T.unescape(s.group)).lower()], True
+    if 0 <= group < len(groups):
+        return [k for k, s in enumerate(settings) if T.unescape(s.group) == groups[group][0]], False
+    return list(range(len(settings))), True
+
+
+def option_view(settings, group, query=b""):
+    """The rows of the Options view (the twin of qmUiAct qmUaOptView)."""
+    shown, titles = option_shown(settings, group, query)
+    return option_rows(settings, option_page(settings), shown, titles)
 
 
 def names(d, about):

@@ -300,6 +300,14 @@ begin
       qmUaText := '';
    end
    else
+   if (qmUaMode=0) and (ParserGetIntValueByKeyByHandle(qmUaUi, 'panel')=2) and (ParserGetValueByKeyByHandle(qmUaUi, 'optq')<>'') then
+   begin
+      //! Esc with a search text in the box empties the box; the next one
+      //! leaves the view.
+      qmUaCmd := 'optfind';
+      qmUaText := '';
+   end
+   else
    if (qmUaMode=0) and (ParserGetIntValueByKeyByHandle(qmUaUi, 'panel')=2) then
    qmUaCmd := 'optcancel'
    else
@@ -891,6 +899,10 @@ begin
    end;
    qmLog('ui '+qmUaCmd+' dir='+qmUaMdir+' request='+ParserGetValueByKeyByHandle(ParserSelectByKey('qm_rt'), 'mfreq'));
 end;
+//! In the Options view no text setting being edited leaves the search box:
+//! Enter there searches for what it holds.
+if (qmUaCmd='filter') and (ParserGetIntValueByKeyByHandle(qmUaUi, 'panel')=2) and (ParserGetIntValueByKeyByHandle(qmUaUi, 'optsel')<0) and (ParserGetIntValueByKeyByHandle(qmUaUi, 'optstrip')=1) then
+qmUaCmd := 'optfind';
 if (qmUaCmd='filter') and (ParserGetIntValueByKeyByHandle(qmUaUi, 'panel')=2) then
 begin
    //! In the Options view the box edits the text setting chosen with Edit
@@ -924,10 +936,108 @@ end;
 //! edited in a copy - ov<k> - and written to qm_settings and
 //! <save>\quartermaster\settings.cfg only on Accept, the way vanilla's
 //! settings window keeps gProfileTmp until Accept (eventsettings.inc:692-739).
-//! Keys: opt (the row), optmid (its id in qm_settings), optn, optpg (page of
-//! ten), optcap (the setting waiting for a key, -1), optsel (the text
+//! Keys: opt (the row), optmid (its id in qm_settings), optn, optpg (the
+//! page), optcap (the setting waiting for a key, -1), optsel (the text
 //! setting the box edits, -1), and per setting k: oid oty olb odf olo ohi
-//! ost odc oop omx (qm_about's declaration), ovs (stored), ov (edited).
+//! ost odc oop omx ogr (qm_about's declaration), ovs (stored), ov (edited).
+//! The list of groups (ref/about.py option_groups): ogn entries, ogt<g> the
+//! title ('' for the settings under no group) and ogc<g> its settings, in
+//! the order the titles first appear; ogn = 0 when no setting has a group.
+//! optgrp is the entry shown, ogn for all settings; optq the search text.
+//! A mod with groups, or with more settings than a page holds, has the strip
+//! over its rows (optstrip = 1: the list and the search box) and nine rows a
+//! page instead of ten (optper).
+//!
+//! The rows of the view (ref/about.py option_view): optshown and osv<i> (the
+//! settings shown), optrows, and per row j orw (the setting, -1 for an empty
+//! row) and orh (0 the setting itself, 1 the title of its group, 2 that
+//! title again on a page the group runs on to). A search text shows the
+//! settings whose label or whose group's title holds it, of every group,
+//! under the titles; else a group of the list shows its settings alone, and
+//! the list's last entry all of them under their titles - which is what a mod
+//! without `group` lines has, row j being setting j. A group starts with its
+//! title; when the title and the whole group do not fit the rest of the page
+//! they start the next one, so a title never stands alone at the foot of a
+//! page and a group that fits a page is never split. A page a group runs on
+//! to starts with the title again.
+procedure qmUaOptView;
+begin
+   var qmUwUi : Integer = ParserSelectByKey('qm_ui');
+   var qmUwN : Integer = ParserGetIntValueByKeyByHandle(qmUwUi, 'optn');
+   var qmUwPer : Integer = ParserGetIntValueByKeyByHandle(qmUwUi, 'optper');
+   var qmUwG : Integer = ParserGetIntValueByKeyByHandle(qmUwUi, 'optgrp');
+   var qmUwQ : String = StrToLowerCase(ParserGetValueByKeyByHandle(qmUwUi, 'optq'));
+   var qmUwTitles : Boolean = True;
+   var qmUwPick : String = '';
+   var qmUwSn : Integer = 0;
+   var qmUwRn : Integer = 0;
+   var qmUwK : Integer;
+   var qmUwJ : Integer;
+   var qmUwSize : Integer;
+   var qmUwT : String;
+   var qmUwFirst : Boolean;
+   var qmUwShow : Boolean;
+   if (qmUwQ='') and (qmUwG>=0) and (qmUwG<ParserGetIntValueByKeyByHandle(qmUwUi, 'ogn')) then
+   begin
+      qmUwTitles := False;
+      qmUwPick := ParserGetValueByKeyByHandle(qmUwUi, 'ogt'+IntToStr(qmUwG));
+   end;
+   for qmUwK:=0 to qmUwN-1 do
+   begin
+      qmUwT := ParserGetValueByKeyByHandle(qmUwUi, 'ogr'+IntToStr(qmUwK));
+      if (qmUwQ<>'') then
+      qmUwShow := (StrPos(qmUwQ, StrToLowerCase(ParserGetValueByKeyByHandle(qmUwUi, 'olb'+IntToStr(qmUwK))+'|'+qmUwT))>0)
+      else
+      qmUwShow := qmUwTitles or (qmUwT=qmUwPick);
+      if (qmUwShow) then
+      begin
+         ParserSetIntValueByKeyByHandle(qmUwUi, 'osv'+IntToStr(qmUwSn), qmUwK);
+         qmUwSn := qmUwSn+1;
+      end;
+   end;
+   ParserSetIntValueByKeyByHandle(qmUwUi, 'optshown', qmUwSn);
+   for qmUwJ:=0 to qmUwSn-1 do
+   begin
+      qmUwK := ParserGetIntValueByKeyByHandle(qmUwUi, 'osv'+IntToStr(qmUwJ));
+      qmUwT := '';
+      if (qmUwTitles) then
+      qmUwT := ParserGetValueByKeyByHandle(qmUwUi, 'ogr'+IntToStr(qmUwK));
+      qmUwFirst := (qmUwT<>'');
+      if (qmUwFirst) and (qmUwJ>0) then
+      begin
+         if (ParserGetValueByKeyByHandle(qmUwUi, 'ogr'+IntToStr(ParserGetIntValueByKeyByHandle(qmUwUi, 'osv'+IntToStr(qmUwJ-1))))=qmUwT) then
+         qmUwFirst := False;
+      end;
+      if (qmUwFirst) then
+      begin
+         qmUwSize := 1;
+         while (qmUwJ+qmUwSize<qmUwSn) and (ParserGetValueByKeyByHandle(qmUwUi, 'ogr'+IntToStr(ParserGetIntValueByKeyByHandle(qmUwUi, 'osv'+IntToStr(qmUwJ+qmUwSize))))=qmUwT) do
+         qmUwSize := qmUwSize+1;
+         if (qmUwRn mod qmUwPer>0) and (1+qmUwSize>qmUwPer-(qmUwRn mod qmUwPer)) then
+         while (qmUwRn mod qmUwPer>0) do
+         begin
+            ParserSetIntValueByKeyByHandle(qmUwUi, 'orw'+IntToStr(qmUwRn), -1);
+            ParserSetIntValueByKeyByHandle(qmUwUi, 'orh'+IntToStr(qmUwRn), 0);
+            qmUwRn := qmUwRn+1;
+         end;
+         ParserSetIntValueByKeyByHandle(qmUwUi, 'orw'+IntToStr(qmUwRn), qmUwK);
+         ParserSetIntValueByKeyByHandle(qmUwUi, 'orh'+IntToStr(qmUwRn), 1);
+         qmUwRn := qmUwRn+1;
+      end
+      else
+      if (qmUwT<>'') and (qmUwRn mod qmUwPer=0) then
+      begin
+         ParserSetIntValueByKeyByHandle(qmUwUi, 'orw'+IntToStr(qmUwRn), qmUwK);
+         ParserSetIntValueByKeyByHandle(qmUwUi, 'orh'+IntToStr(qmUwRn), 2);
+         qmUwRn := qmUwRn+1;
+      end;
+      ParserSetIntValueByKeyByHandle(qmUwUi, 'orw'+IntToStr(qmUwRn), qmUwK);
+      ParserSetIntValueByKeyByHandle(qmUwUi, 'orh'+IntToStr(qmUwRn), 0);
+      qmUwRn := qmUwRn+1;
+   end;
+   ParserSetIntValueByKeyByHandle(qmUwUi, 'optrows', qmUwRn);
+end;
+
 if (qmUaCmd='options') then
 begin
    qmUaDone := True;
@@ -969,6 +1079,7 @@ begin
          ParserSetIntValueByKeyByHandle(qmUaUi, 'odc'+qmUaOpk, ParserGetIntValueByKeyByHandle(qmUaOab, 'sdc'+qmUaOk2));
          ParserSetValueByKeyByHandle(qmUaUi, 'oop'+qmUaOpk, ParserGetValueByKeyByHandle(qmUaOab, 'sop'+qmUaOk2));
          ParserSetIntValueByKeyByHandle(qmUaUi, 'omx'+qmUaOpk, ParserGetIntValueByKeyByHandle(qmUaOab, 'smx'+qmUaOk2));
+         ParserSetValueByKeyByHandle(qmUaUi, 'ogr'+qmUaOpk, ParserGetValueByKeyByHandle(qmUaOab, 'sgr'+qmUaOk2));
          qmUaOv := '';
          if (qmUaOch<>0) then
          qmUaOv := ParserGetValueByKeyByHandle(qmUaOch, ParserGetValueByKeyByHandle(qmUaOab, 'sid'+qmUaOk2));
@@ -977,20 +1088,98 @@ begin
          ParserSetValueByKeyByHandle(qmUaUi, 'ovs'+qmUaOpk, qmUaOv);
          ParserSetValueByKeyByHandle(qmUaUi, 'ov'+qmUaOpk, qmUaOv);
       end;
+      //! The list of groups. The settings of a group mostly follow each
+      //! other, so the entry of the setting before is tried first.
+      var qmUaOgn : Integer = 0;
+      var qmUaOgt : String;
+      var qmUaOgl : String = '';
+      var qmUaOgi : Integer = -1;
+      var qmUaOgj : Integer;
+      var qmUaOgh : Boolean = False;
+      for qmUaK:=0 to ParserGetIntValueByKeyByHandle(qmUaUi, 'optn')-1 do
+      if (ParserGetValueByKeyByHandle(qmUaUi, 'ogr'+IntToStr(qmUaK))<>'') then
+      qmUaOgh := True;
+      if (qmUaOgh) then
+      for qmUaK:=0 to ParserGetIntValueByKeyByHandle(qmUaUi, 'optn')-1 do
+      begin
+         qmUaOgt := ParserGetValueByKeyByHandle(qmUaUi, 'ogr'+IntToStr(qmUaK));
+         if (qmUaOgi<0) or (qmUaOgt<>qmUaOgl) then
+         begin
+            qmUaOgi := -1;
+            for qmUaOgj:=0 to qmUaOgn-1 do
+            if (qmUaOgi<0) and (ParserGetValueByKeyByHandle(qmUaUi, 'ogt'+IntToStr(qmUaOgj))=qmUaOgt) then
+            qmUaOgi := qmUaOgj;
+            if (qmUaOgi<0) then
+            begin
+               qmUaOgi := qmUaOgn;
+               ParserSetValueByKeyByHandle(qmUaUi, 'ogt'+IntToStr(qmUaOgi), qmUaOgt);
+               ParserSetIntValueByKeyByHandle(qmUaUi, 'ogc'+IntToStr(qmUaOgi), 0);
+               qmUaOgn := qmUaOgn+1;
+            end;
+            qmUaOgl := qmUaOgt;
+         end;
+         ParserSetIntValueByKeyByHandle(qmUaUi, 'ogc'+IntToStr(qmUaOgi), ParserGetIntValueByKeyByHandle(qmUaUi, 'ogc'+IntToStr(qmUaOgi))+1);
+      end;
+      ParserSetIntValueByKeyByHandle(qmUaUi, 'ogn', qmUaOgn);
+      if (qmUaOgn>0) or (ParserGetIntValueByKeyByHandle(qmUaUi, 'optn')>10) then
+      begin
+         ParserSetIntValueByKeyByHandle(qmUaUi, 'optstrip', 1);
+         ParserSetIntValueByKeyByHandle(qmUaUi, 'optper', 9);
+      end
+      else
+      begin
+         ParserSetIntValueByKeyByHandle(qmUaUi, 'optstrip', 0);
+         ParserSetIntValueByKeyByHandle(qmUaUi, 'optper', 10);
+      end;
+      //! The view opens on the first group; without groups that is everything.
+      ParserSetIntValueByKeyByHandle(qmUaUi, 'optgrp', 0);
+      ParserSetValueByKeyByHandle(qmUaUi, 'optq', '');
+      qmUaOptView;
       ParserSetIntValueByKeyByHandle(qmUaUi, 'panel', 2);
       ParserSetValueByKeyByHandle(qmUaUi, 'msg', '');
-      qmLog('ui options open row='+qmUaS+' mod='+ParserGetValueByKeyByHandle(qmUaUi, 'optmid')+' settings='+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'optn'))+' stored='+IntToStr(qmUaOch));
+      qmLog('ui options open row='+qmUaS+' mod='+ParserGetValueByKeyByHandle(qmUaUi, 'optmid')+' settings='+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'optn'))+' groups='+IntToStr(qmUaOgn)+' rows='+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'optrows'))+' stored='+IntToStr(qmUaOch));
    end;
 end;
 if (qmUaCmd='optpage') then
 begin
    qmUaDone := True;
+   var qmUaOper : Integer = ParserGetIntValueByKeyByHandle(qmUaUi, 'optper');
+   if (qmUaOper<1) then
+   qmUaOper := 10;
    qmUaK := ParserGetIntValueByKeyByHandle(qmUaUi, 'optpg')+qmUaArg;
-   if (qmUaK*10>=ParserGetIntValueByKeyByHandle(qmUaUi, 'optn')) then
-   qmUaK := (ParserGetIntValueByKeyByHandle(qmUaUi, 'optn')-1) div 10;
+   if (qmUaK*qmUaOper>=ParserGetIntValueByKeyByHandle(qmUaUi, 'optrows')) then
+   qmUaK := (ParserGetIntValueByKeyByHandle(qmUaUi, 'optrows')-1) div qmUaOper;
    if (qmUaK<0) then
    qmUaK := 0;
    ParserSetIntValueByKeyByHandle(qmUaUi, 'optpg', qmUaK);
+end;
+//! A group picked in the list (arg: its entry; the list's last one, ogn, is
+//! all settings) or a text typed into the search box (argtext): the rows
+//! again, from their first page. Picking a group ends a search. Either ends a
+//! key capture and the editing of a text setting, whose value so far stays in
+//! the edit copy.
+if (qmUaCmd='optgroup') or (qmUaCmd='optfind') then
+begin
+   qmUaDone := True;
+   if (ParserGetIntValueByKeyByHandle(qmUaUi, 'panel')=2) and (ParserGetIntValueByKeyByHandle(qmUaUi, 'optstrip')=1) then
+   begin
+      if (qmUaCmd='optgroup') then
+      begin
+         qmUaK := qmUaArg;
+         if (qmUaK<0) or (qmUaK>ParserGetIntValueByKeyByHandle(qmUaUi, 'ogn')) then
+         qmUaK := ParserGetIntValueByKeyByHandle(qmUaUi, 'ogn');
+         ParserSetIntValueByKeyByHandle(qmUaUi, 'optgrp', qmUaK);
+         ParserSetValueByKeyByHandle(qmUaUi, 'optq', '');
+      end
+      else
+      ParserSetValueByKeyByHandle(qmUaUi, 'optq', qmUaText);
+      ParserSetIntValueByKeyByHandle(qmUaUi, 'optpg', 0);
+      ParserSetIntValueByKeyByHandle(qmUaUi, 'optcap', -1);
+      ParserSetIntValueByKeyByHandle(qmUaUi, 'optsel', -1);
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', '');
+      qmUaOptView;
+      qmLog('ui options view group='+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'optgrp'))+' of '+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'ogn'))+' find=['+ParserGetValueByKeyByHandle(qmUaUi, 'optq')+'] shown='+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'optshown'))+' rows='+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'optrows')));
+   end;
 end;
 if (qmUaCmd='optbtn') then
 begin

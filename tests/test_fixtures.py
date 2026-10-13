@@ -34,11 +34,36 @@ def test_the_fixtures_with_the_planned_files(F, mods):
         F.WASD2: sorted([F.REGISTERSHORTCUTS, F.ONCAMERA, F.HOTKEYSETTINGS,
                          F.HOTKEYS_CFG, "about.cfg", "mod.ini"]),
         F.CAM2: ["about.cfg", "mod.ini"],
+        F.MANY: ["about.cfg", "mod.ini"],
         F.DATA_A: sorted([F.FORMATIONS_CFG, F.OBJCUSTOM_CFG, "mod.ini"]),
         F.DATA_B: sorted([F.FORMATIONS_CFG, F.OBJCUSTOM_CFG, "mod.ini"]),
         F.DATA_A6: sorted([F.FORMATIONS_CFG, "mod.ini"]),
         F.DATA_B6: sorted([F.FORMATIONS_CFG, "mod.ini"]),
     }
+
+
+def test_many_has_more_settings_than_the_old_limit_under_group_lines(F, mods):
+    """0.1.6: 40 settings (the limit was 32), the ones past the old limit in a
+    group of their own, a group longer than a page among the others."""
+    from ref import about as A
+    a = A.parse(mods[F.MANY]["about.cfg"])
+    assert a.problems == [] and a.id == b"qmtestmany"
+    assert [s.id for s in a.settings] == [b"s%d" % k for k in range(40)]
+    assert [(s.group, s.kind) for s in a.settings[31:34]] == [
+        (b"Past the old limit of 32", b"int"), (b"Past the old limit of 32", b"bool"),
+        (b"Past the old limit of 32", b"bool")]
+    assert a.settings[0].group == b"" and not any(s.kind in (b"key", b"text") for s in a.settings)
+    # the list of groups, the group past the old limit alone, and all settings
+    assert A.option_groups(a.settings) == [(b"", 2), (b"Match interface", 6),
+                                           (b"Economy and trade", 12), (b"Camera", 9),
+                                           (b"Past the old limit of 32", 11)]
+    assert A.option_view(a.settings, 0) == [(b"set", 0), (b"set", 1)]
+    assert A.option_view(a.settings, 4) == [(b"set", k) for k in range(29, 40)]
+    rows = A.option_view(a.settings, 5)
+    pages = [rows[i:i + 9] for i in range(0, len(rows), 9)]
+    assert len(rows) == 58 and len(pages) == 7 and (b"set", 33) in pages[5]
+    assert [kind for kind, _k in pages[0]] == [b"set"] * 2 + [b"head"] + [b"set"] * 6
+    assert pages[2][0] == (b"more", 16)
 
 
 def test_wasd2_is_wasd_with_its_keys_read_from_the_settings(F, mods):
@@ -214,6 +239,6 @@ def test_building_writes_nothing_into_the_reference_mod(reference_dir, tmp_path)
          "--out", str(tmp_path / "fx")],
         cwd=str(tmp_path), env=env, capture_output=True, timeout=120)
     assert proc.returncode == 0, proc.stderr.decode(errors="replace")
-    assert b"wrote 10 fixtures" in proc.stdout
+    assert b"wrote 11 fixtures" in proc.stdout
     assert os.path.isfile(str(tmp_path / "fx" / "QMTestWASD" / "mod.ini"))
     assert snapshot(tools) == before

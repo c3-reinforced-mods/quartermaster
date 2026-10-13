@@ -298,7 +298,16 @@ var qmSmBox : Integer = _gui_CreateParent('fbox', qmSmParent, gc_halLeft, gc_val
 // The Options view's text box lives in its own layer, updated in place like
 // the filter box, so its edit control keeps caret and focus over redraws.
 var qmSmOBox : Integer = _gui_CreateParent('obox', qmSmParent, gc_halLeft, gc_valTop, 0, 0, qmSmVw, qmSmVh, True);
-SetGUIElementVisible(qmSmOBox, False);
+// The Options view's search box, in a layer of its own for the same reason.
+var qmSmSBox : Integer = _gui_CreateParent('sbox', qmSmParent, gc_halLeft, gc_valTop, 0, 0, qmSmVw, qmSmVh, True);
+//! Each of the two layers is shown or hidden once a redraw, below, when the
+//! view has said whether it uses it - not hidden here and shown again there:
+//! in the hands-on run of 2026-10-13 (g21c) the search box took the letters
+//! typed before the first redraw and none after it, three times "ca" of
+//! "camera". The lists' filter box, whose layer is never hidden on the way,
+//! keeps the keyboard over every redraw.
+var qmSmOBoxOn : Boolean = False;
+var qmSmSBoxOn : Boolean = False;
 // The new-mod dialog (mode 4) and its name box, in a layer of its own that is
 // updated in place, like the filter box.
 var qmSmNm : Integer = _gui_CreateParent('newmod', qmSmParent, gc_halLeft, gc_valTop, 0, 0, qmSmVw, qmSmVh, qmSmBupdate);
@@ -321,6 +330,8 @@ begin
    // The restart notice alone: no window under it, no button on it.
    SetGUIElementVisible(qmSmMain, False);
    SetGUIElementVisible(qmSmBox, False);
+   SetGUIElementVisible(qmSmOBox, False);
+   SetGUIElementVisible(qmSmSBox, False);
    var qmSmNWnd : Integer = _gui_CreateSkinWindow('nwnd', qmSmNote, gc_halParentMiddle, gc_valParentMiddle, 0, 0, 660, 210, 1, qmSmBupdate);
    // The restart notice.
    qmSmText := 'Restarting the game';
@@ -436,22 +447,44 @@ end
 else
 if (qmSmPanel=2) then
 begin
-   //! The Options view (qmUiAct panel 2; plan G16): ten settings a page, each
-   //! with its label, its edited value (green while it differs from the
-   //! stored one) and the buttons of its type - bool Switch; int and float
-   //! - and +; choice < and >; key Change (then "press a key"); text Edit
-   //! (then a text box in the value column).
+   //! The Options view (qmUiAct panel 2; plan G16): ten rows a page (orw<j>,
+   //! orh<j>: qmUiAct lays them out), a row a setting with its label, its
+   //! edited value (green while it differs from the stored one) and the
+   //! buttons of its type - bool Switch; int and float - and +; choice < and
+   //! >; key Change (then "press a key"); text Edit (then a text box in the
+   //! value column) - or the title of the group of settings under it. A mod
+   //! with groups, or with more settings than a page holds, has a strip over
+   //! the rows (optstrip): the list of its groups and a search box, where the
+   //! lists' filter stands in the main view. The rows then start where the
+   //! lists do and a page has nine of them (optper).
    SetGUIElementVisible(qmSmBox, False);
    var qmSmOpt : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'opt');
    var qmSmOn : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'optn');
+   var qmSmOrows : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'optrows');
    var qmSmOpg : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'optpg');
    var qmSmOcap : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'optcap');
    var qmSmOsel : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'optsel');
-   var qmSmOpages : Integer = (qmSmOn+9) div 10;
-   var qmSmOBg : Integer = _gui_CreateSkinWindow('opts', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, 60+qmSmHeadOff, qmSmW-qmSmLeftX*2-qmSmScrollOff, qmSmH-230, 1, qmSmBupdate);
+   var qmSmOper : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'optper');
+   if (qmSmOper<1) then
+   qmSmOper := 10;
+   var qmSmOstrip : Boolean = (ParserGetIntValueByKeyByHandle(qmSmUi, 'optstrip')=1);
+   var qmSmOgn : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'ogn');
+   var qmSmOq : String = ParserGetValueByKeyByHandle(qmSmUi, 'optq');
+   var qmSmOtop : Integer = 60;
+   var qmSmOht : Integer = qmSmH-230;
+   if (qmSmOstrip) then
+   begin
+      qmSmOtop := qmSmListY;
+      qmSmOht := qmSmH-230-(qmSmListY-60);
+   end;
+   var qmSmOpages : Integer = (qmSmOrows+qmSmOper-1) div qmSmOper;
+   var qmSmOBg : Integer = _gui_CreateSkinWindow('opts', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmOtop+qmSmHeadOff, qmSmW-qmSmLeftX*2-qmSmScrollOff, qmSmOht, 1, qmSmBupdate);
    qmSmHead := _gui_CreateSkinHeadWindow('sh', qmSmOBg, gc_halParentLeft, gc_valParentTop, 0, -qmSmHeadOff, GetGUIElementWidth(qmSmOBg)+qmSmScrollOff, qmSmBupdate);
    // The head, captions and value words of the Options view.
    qmSmText := 'Options: '+ParserGetValueByKeyByHandle(qmSmUi, 'name'+IntToStr(qmSmOpt));
+   // What a search found, in the head.
+   if (qmSmOq<>'') then
+   qmSmText := qmSmText+' - '+IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'optshown'))+' found';
    if (qmSmOpages>1) then
    qmSmText := qmSmText+' (page '+IntToStr(qmSmOpg+1)+' of '+IntToStr(qmSmOpages)+')';
    _gui_CreateText('thead', qmSmHead, qmSmText, gc_halParentLeft, gc_valParentMiddle, qmSmPad, 2, GetGUIElementWidth(qmSmHead), 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
@@ -464,15 +497,41 @@ begin
    var qmSmOlb : String;
    var qmSmOll : Integer;
    var qmSmOcut : Boolean;
-   for qmSmOr:=0 to 9 do
+   var qmSmOhd : Integer;
+   var qmSmOgt : String;
+   // What the rows say when a search finds nothing (no other view is empty).
+   if (qmSmOrows=0) then
    begin
-      qmSmOk := qmSmOpg*10+qmSmOr;
-      if (qmSmOk<qmSmOn) then
+      qmSmText := 'No setting has this in its name. Esc empties the search.';
+      _gui_CreateText('onone', qmSmOBg, qmSmText, gc_halParentLeft, gc_valParentTop, 16, 14, 0, 36, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmGrey, qmSmBupdate);
+   end;
+   for qmSmOr:=0 to qmSmOper-1 do
+   begin
+      qmSmOk := -1;
+      qmSmOhd := 0;
+      if (qmSmOpg*qmSmOper+qmSmOr<qmSmOrows) then
+      begin
+         qmSmOk := ParserGetIntValueByKeyByHandle(qmSmUi, 'orw'+IntToStr(qmSmOpg*qmSmOper+qmSmOr));
+         qmSmOhd := ParserGetIntValueByKeyByHandle(qmSmUi, 'orh'+IntToStr(qmSmOpg*qmSmOper+qmSmOr));
+      end;
+      qmSmOy := 14+qmSmOr*48;
+      //! A group's title, in the font of the dialogs' titles and at the foot
+      //! of its row, next to the settings it stands over; cut with `...`
+      //! where the row ends. On a page the group runs on to it says so.
+      if (qmSmOk>=0) and (qmSmOk<qmSmOn) and (qmSmOhd>0) then
+      begin
+         qmSmOgt := ParserGetValueByKeyByHandle(qmSmUi, 'ogr'+IntToStr(qmSmOk));
+         // The mark of a group's title on a later page of the group.
+         if (qmSmOhd=2) then
+         qmSmOgt := qmSmOgt+' (continued)';
+         qmSmFit(qmSmOgt, 940, gc_font_serif_16, qmSmOlb);
+         _gui_CreateText('ogh'+IntToStr(qmSmOr), qmSmOBg, qmSmOlb, gc_halParentLeft, gc_valParentTop, 16, qmSmOy+8, 950, 36, gc_halLeft, gc_valMiddle, gc_font_serif_16, qmSmHeadColor, qmSmBupdate);
+      end;
+      if (qmSmOk>=0) and (qmSmOk<qmSmOn) and (qmSmOhd=0) then
       begin
          qmSmOs := IntToStr(qmSmOk);
          qmSmOty := ParserGetValueByKeyByHandle(qmSmUi, 'oty'+qmSmOs);
          qmSmOval := ParserGetValueByKeyByHandle(qmSmUi, 'ov'+qmSmOs);
-         qmSmOy := 14+qmSmOr*48;
          var qmSmOlt : String = ParserGetValueByKeyByHandle(qmSmUi, 'olb'+qmSmOs);
          // The mark of a setting the host decides in multiplayer.
          if (ParserGetValueByKeyByHandle(qmSmUi, 'osc'+qmSmOs)='host') then
@@ -531,9 +590,9 @@ begin
             begin
                //! The text box, in the value column of its row: window position
                //! plus box position plus row (the window is centred in the view).
-               SetGUIElementVisible(qmSmOBox, True);
+               qmSmOBoxOn := True;
                qmSmText := ParserGetValueByKeyByHandle(qmSmUi, 'typed');
-               var qmSmOIn : Integer = _gui_CreateInputBox('otext', qmSmOBox, qmSmText, gc_halParentLeft, gc_valParentTop, (qmSmVw-qmSmW) div 2+qmSmLeftX+436, (qmSmVh-qmSmH) div 2+60+qmSmHeadOff+qmSmOy-2, 168, 40, qmSmEventstate, qmSmNul, True, 10, 1, gc_halLeft, gc_valMiddle, gc_font_serif_13, 1, 1, 1, 1, True);
+               var qmSmOIn : Integer = _gui_CreateInputBox('otext', qmSmOBox, qmSmText, gc_halParentLeft, gc_valParentTop, (qmSmVw-qmSmW) div 2+qmSmLeftX+436, (qmSmVh-qmSmH) div 2+qmSmOtop+qmSmHeadOff+qmSmOy-2, 168, 40, qmSmEventstate, qmSmNul, True, 10, 1, gc_halLeft, gc_valMiddle, gc_font_serif_13, 1, 1, 1, 1, True);
                _gui_InputBoxSetupStrCharFilter(qmSmOIn, True, gc_gui_charfilter_default);
             end;
          end;
@@ -542,8 +601,56 @@ begin
    // The page buttons of the Options view.
    if (qmSmOpages>1) then
    begin
-      qmSmButton('bprev', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, 60+qmSmHeadOff+qmSmH-230+6, 'Previous', qmTagOptPrev, qmSmOpg>0);
-      qmSmButton('bnext', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmW-qmSmLeftX-qmSmScrollOff-177, 60+qmSmHeadOff+qmSmH-230+6, 'Next', qmTagOptNext, qmSmOpg<qmSmOpages-1);
+      qmSmButton('bprev', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmOtop+qmSmHeadOff+qmSmOht+6, 'Previous', qmTagOptPrev, qmSmOpg>0);
+      qmSmButton('bnext', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmW-qmSmLeftX-qmSmScrollOff-177, qmSmOtop+qmSmHeadOff+qmSmOht+6, 'Next', qmTagOptNext, qmSmOpg<qmSmOpages-1);
+   end;
+   //! The strip. The list of groups is vanilla's combo box, made and filled
+   //! as the campaign window makes its difficulty list (showcampaign.inc:
+   //! 101-110); a pick arrives as a `select` of the element, like a list's
+   //! (eventcampaign.inc:16-33). It is made after the rows, so its open list
+   //! lies over them. Its last entry is every setting; an entry's tag is its
+   //! place. The search box is laid out as the lists' filter is.
+   if (qmSmOstrip) then
+   begin
+      var qmSmOsx : Integer = qmSmLeftX;
+      if (qmSmOgn>0) then
+      begin
+         // The captions of the strip.
+         qmSmText := 'Group:';
+         _gui_CreateText('tgroup', qmSmWnd, qmSmText, gc_halParentLeft, gc_valParentTop, qmSmOsx, 70, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
+         // The open list shows twelve entries at most and scrolls the rest. The
+         // box is some 22 high: at 60 its middle is the search box's (seen in
+         // the game, run g21v1 of 2026-10-13: at 55 it stood 5 too high).
+         var qmSmOlist : Integer = 0;
+         if (qmSmOgn+1>12) then
+         qmSmOlist := 12;
+         var qmSmOcb : Integer = _gui_CreateComboBox('ogroup', qmSmWnd, qmSmOgn+1, qmSmOlist, gc_halParentLeft, gc_valParentTop, qmSmOsx+80, 60, 330, gc_halLeft, gc_valMiddle, 5, 0, gc_font_serif_12, True, qmSmEventstate, False, qmSmBupdate);
+         for qmSmOk:=0 to qmSmOgn-1 do
+         begin
+            qmSmOgt := ParserGetValueByKeyByHandle(qmSmUi, 'ogt'+IntToStr(qmSmOk));
+            // The name of the settings that stand under no group.
+            if (qmSmOgt='') then
+            qmSmOgt := 'General';
+            qmSmFit(qmSmOgt+' ('+IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'ogc'+IntToStr(qmSmOk)))+')', 290, gc_font_serif_12, qmSmOlb);
+            GUIListBoxAddItem(qmSmOcb, qmSmOlb, qmSmOk);
+         end;
+         qmSmText := 'All settings ('+IntToStr(qmSmOn)+')';
+         GUIListBoxAddItem(qmSmOcb, qmSmText, qmSmOgn);
+         //! A search goes over every group, so while one is on the list
+         //! says All settings; the group comes back with the emptied box
+         //! (seen in the game, run g21v3 of 2026-10-13: "General (2)" over
+         //! nine settings found in another group read as a search in General).
+         if (qmSmOq<>'') then
+         SetGUIListBoxItemIndexSilent(qmSmOcb, qmSmOgn)
+         else
+         SetGUIListBoxItemIndexSilent(qmSmOcb, ParserGetIntValueByKeyByHandle(qmSmUi, 'optgrp'));
+         qmSmOsx := qmSmOsx+450;
+      end;
+      qmSmText := 'Search:';
+      _gui_CreateText('tsearch', qmSmWnd, qmSmText, gc_halParentLeft, gc_valParentTop, qmSmOsx, 70, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
+      qmSmSBoxOn := True;
+      var qmSmOfind : Integer = _gui_CreateInputBox('ofind', qmSmSBox, qmSmOq, gc_halParentLeft, gc_valParentTop, (qmSmVw-qmSmW) div 2+qmSmOsx+80, (qmSmVh-qmSmH) div 2+52, 260, 40, qmSmEventstate, qmSmNul, True, 10, 1, gc_halLeft, gc_valMiddle, gc_font_serif_13, 1, 1, 1, 1, True);
+      _gui_InputBoxSetupStrCharFilter(qmSmOfind, True, gc_gui_charfilter_default);
    end;
 end
 else
@@ -774,6 +881,11 @@ begin
    qmSmTextPanel(qmSmDescr, qmSmBody, qmSmDescrH);
    qmSmRows := qmSmShown;
 end;
+
+// The Options view's two text-box layers: there for the view that made its
+// box, gone for every other.
+SetGUIElementVisible(qmSmOBox, qmSmOBoxOn);
+SetGUIElementVisible(qmSmSBox, qmSmSBoxOn);
 
 // the message line and the bottom buttons; Apply only with pending changes
 // (qmUiAct `canapply`)

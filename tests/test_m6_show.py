@@ -62,6 +62,10 @@ class Screen(PAS5.Engine):
         self.urls, self.did = [], []
         #: (font, text) of every width the state measured
         self.measured = []
+        #: (parent, name) of every element made, a second one of a name too
+        self.adds = []
+        #: (name, visible) of every SetGUIElementVisible, in order
+        self.shown = []
         for name, value in CONST.items():
             self.natives[name] = (lambda v: (lambda: v))(value)
 
@@ -69,6 +73,7 @@ class Screen(PAS5.Engine):
     def _add(self, kind, name, parent, **kw):
         parent = parent or TOP
         p = self.els[parent]
+        self.adds.append((parent, name))
         old = next((c for c in p.children if self.els[c].name == name), None)
         if old is not None:
             self._drop_children(old)
@@ -129,6 +134,7 @@ class Screen(PAS5.Engine):
 
     def n_SetGUIElementVisible(self, h, v):
         self.els[h].visible = v
+        self.shown.append((self.els[h].name, v))
 
     def n_SetGUIElementEnabled(self, h, v):
         self.els[h].enabled = v
@@ -187,7 +193,9 @@ class Screen(PAS5.Engine):
         return h_
 
     def n__gui_CreateSkinWindow(self, name, parent, hal, val, x, y, w, h, skin, update):
-        return self._add("skin", name, parent, w=w, h=h)
+        h_ = self._add("skin", name, parent, w=w, h=h)
+        self.els[h_].x, self.els[h_].y = x, y
+        return h_
 
     def n__gui_CreateSkinHeadWindow(self, name, parent, hal, val, x, y, w, update):
         return self._add("head", name, parent, w=w, h=30)
@@ -206,11 +214,20 @@ class Screen(PAS5.Engine):
         self.els[h_].x, self.els[h_].y = x, y
         return h_
 
-    def n__gui_CreateInputBox(self, name, parent, text, *rest):
-        return self._add("input", name, parent, text=text)
+    def n__gui_CreateInputBox(self, name, parent, text, hal, val, x, y, w, h, *rest):
+        h_ = self._add("input", name, parent, text=text, w=w, h=h)
+        self.els[h_].x, self.els[h_].y = x, y
+        return h_
 
     def n__gui_CreateListBox(self, name, parent, *rest):
         return self._add("list", name, parent)
+
+    def n__gui_CreateComboBox(self, name, parent, count, scroll, hal, val, x, y, w, thal, tval,
+                              tox, toy, font, button, event, get, clear):
+        h_ = self._add("combo", name, parent, w=w)
+        e = self.els[h_]
+        e.x, e.y, e.event, e.count, e.scroll, e.font = x, y, event, count, scroll, font
+        return h_
 
     def n_GUIListBoxClearSilent(self, h):
         self.els[h].items = []
@@ -548,8 +565,23 @@ def test_the_report_view_lists_the_report_by_mod():
     assert win(eng, b"fbox").visible is False
 
 
+def row_keys(layout):
+    """qm_ui's rows of the Options view for `layout` = [(kind, setting)], the
+    form ref/about.py option_rows gives (qmUiAct `options` writes them)."""
+    kinds = {b"set": 0, b"head": 1, b"more": 2, b"none": 0}
+    keys = {"optrows": len(layout)}
+    for j, (kind, k) in enumerate(layout):
+        keys["orw%d" % j], keys["orh%d" % j] = k, kinds[kind]
+    return keys
+
+
+def plain_rows(n):
+    """The rows of `n` settings without a group: row j is setting j."""
+    return row_keys([(b"set", k) for k in range(n)])
+
+
 def test_the_options_view_draws_each_setting_by_its_type():
-    ui = model(ROWS, panel=2, opt=1, optn=12, optpg=0, optcap=3, optsel=4)
+    ui = model(ROWS, panel=2, opt=1, optn=12, optpg=0, optcap=3, optsel=4, **plain_rows(12))
     kinds = [b"bool", b"int", b"float", b"key", b"text", b"choice", b"bool", b"int", b"int",
              b"int", b"int", b"int"]
     for k, t in enumerate(kinds):
@@ -587,7 +619,8 @@ def test_the_options_view_draws_each_setting_by_its_type():
 def options(labels):
     """The Options view over bool settings with `labels`; {name: element} of
     its label texts, and the engine."""
-    ui = model(ROWS, panel=2, opt=1, optn=len(labels), optpg=0, optcap=-1, optsel=-1)
+    ui = model(ROWS, panel=2, opt=1, optn=len(labels), optpg=0, optcap=-1, optsel=-1,
+               **plain_rows(len(labels)))
     for k, label in enumerate(labels):
         ui.update({"oty%d" % k: b"bool", "olb%d" % k: label, "ov%d" % k: b"1",
                    "ovs%d" % k: b"1"})
@@ -664,6 +697,237 @@ def test_a_label_is_measured_in_the_font_it_is_drawn_in():
                            st=b"OK")]))
     fonts = set(f for f, t in eng.measured if t.startswith(b"Cannons"))
     assert fonts == {1000 + CONST["gc_font_serif_12"]}
+
+
+HEAD_OFF = 30 + 5               # the emulated skin head's texture and its gap
+
+
+def grouped_view(sizes, page=0, group=None, query=b"", **more):
+    """The Options view of bool settings in groups `sizes` = [(title, count)]
+    as qmUiAct leaves qm_ui for it, the twin doing its part: the entry `group`
+    of the list of groups (default: its last one, all settings), the search
+    `query`, page `page`. (Its skin window, the engine)."""
+    from ref import about as A
+    settings = []
+    for title, count in sizes:
+        for _ in range(count):
+            s = A.Setting(b"s%d" % len(settings), b"bool", b"1", b"Setting %d" % len(settings))
+            s.group = title
+            settings.append(s)
+    groups = A.option_groups(settings)
+    g = len(groups) if group is None else group
+    ui = model(ROWS, panel=2, opt=1, optn=len(settings), optpg=page, optcap=-1, optsel=-1,
+               optstrip=int(A.option_strip(settings)), optper=A.option_page(settings),
+               ogn=len(groups), optgrp=g, optq=query,
+               optshown=len(A.option_shown(settings, g, query)[0]),
+               **row_keys(A.option_view(settings, g, query)))
+    for i, (title, count) in enumerate(groups):
+        ui.update({"ogt%d" % i: title, "ogc%d" % i: count})
+    for k, s in enumerate(settings):
+        ui.update({"oty%d" % k: b"bool", "olb%d" % k: s.label, "ov%d" % k: b"1",
+                   "ovs%d" % k: b"1", "ogr%d" % k: s.group})
+    ui.update(more)
+    eng = show(ui)
+    return win(eng, b"main.wnd.opts"), eng
+
+
+def named(eng, opts):
+    """{name: element} of the view's own texts (no button captions)."""
+    return dict((t.name, t) for t in eng.under(opts.handle, "text") if t.name != b"txtbtn")
+
+
+SIZES = [(b"", 2), (b"Match interface", 3), (b"Camera", 6)]
+
+
+def test_a_group_s_title_stands_over_its_settings():
+    opts, eng = grouped_view(SIZES)                       # all settings
+    texts = named(eng, opts)
+    # rows 0 and 1 the settings before any group, row 2 the title, rows 3-5
+    # its settings; the six of Camera do not fit the three rows left
+    assert sorted(texts) == sorted([b"thead", b"ogh2"] + [b"olb%d" % k for k in range(5)]
+                                   + [b"oval%d" % k for k in range(5)])
+    title = texts[b"ogh2"]
+    assert title.text == b"Match interface" and title.color == b"FFDFAF"
+    assert (title.x, title.y, title.h) == (16, 14 + 2 * 48 + 8, 36)
+    assert (1000 + CONST["gc_font_serif_16"], b"Match interface") in eng.measured
+    assert [texts[b"olb%d" % k].y for k in range(5)] == [14 + r * 48 for r in (0, 1, 3, 4, 5)]
+    assert texts[b"olb2"].text == b"Setting 2"
+    # a row is a title or a setting, never both: nothing is made twice
+    made = [name for parent, name in eng.adds if parent == opts.handle]
+    assert len(made) == len(set(made))
+    # a setting's button keeps the setting's number, whatever row it is on
+    tags = dict((b.name, b.tag) for b in eng.under(opts.handle, "button"))
+    assert tags == dict((b"ob1%d" % k, 200 + 2 * k) for k in range(5))
+    assert texts[b"thead"].text == b"Options: ZoomOut! (page 1 of 2)"
+    page = buttons(eng)
+    assert page[b"bprev"] == (b"Previous", False) and page[b"bnext"] == (b"Next", True)
+    # the second page starts with the next group's title
+    opts, eng = grouped_view(SIZES, page=1)
+    texts = named(eng, opts)
+    assert texts[b"ogh0"].text == b"Camera" and texts[b"ogh0"].y == 14 + 8
+    assert [texts[b"olb%d" % k].y for k in range(5, 11)] == [14 + r * 48 for r in range(1, 7)]
+    assert sorted(b.name for b in eng.under(opts.handle, "button")) == sorted(
+        b"ob1%d" % k for k in range(5, 11))
+    assert buttons(eng)[b"bnext"] == (b"Next", False)
+
+
+def test_a_group_that_runs_on_to_the_next_page_says_so_and_a_long_title_is_cut():
+    long_title = b"T" * 130
+    opts, eng = grouped_view([(b"Economy", 12), (long_title, 1)], page=1)
+    texts = dict((n, t.text) for n, t in named(eng, opts).items())
+    # nine rows a page: the title and eight on the first, the title again and
+    # the last four on the second, then the next group
+    assert texts[b"ogh0"] == b"Economy (continued)"
+    assert texts[b"olb8"] == b"Setting 8" and b"olb7" not in texts
+    # 940 wide at 8 a byte: 117 bytes, the last three the dots
+    assert texts[b"ogh5"] == b"T" * 114 + b"..."
+    assert texts[b"thead"] == b"Options: ZoomOut! (page 2 of 2)"
+    # the pages are counted in rows: 18 settings in three groups of six take
+    # three, each group on a page of its own
+    opts, eng = grouped_view([(b"A", 6), (b"B", 6), (b"C", 6)], page=2)
+    texts = dict((n, t.text) for n, t in named(eng, opts).items())
+    assert texts[b"thead"] == b"Options: ZoomOut! (page 3 of 3)" and texts[b"ogh0"] == b"C"
+    assert sorted(n for n in texts if n.startswith(b"olb")) == sorted(b"olb%d" % k for k in range(12, 18))
+    assert buttons(eng)[b"bnext"] == (b"Next", False) and buttons(eng)[b"bprev"] == (b"Previous", True)
+    # ... and the rows a group leaves empty on its page hold nothing
+    opts, eng = grouped_view([(b"A", 6), (b"B", 6), (b"C", 6)], page=0)
+    assert len(eng.under(opts.handle, "button")) == 6
+    assert sorted(t.y for t in eng.under(opts.handle, "text") if t.name.startswith(b"o")) == sorted(
+        [14 + 8] + [14 + r * 48 for r in range(1, 7)] * 2)
+
+
+def test_settings_past_the_old_limit_are_drawn_with_their_own_tags():
+    # Until 0.1.5 a mod had 32 settings at most. Forty without a group are
+    # more than a page: nine rows under the search box, the fourth page 27-35.
+    opts, eng = grouped_view([(b"", 40)], page=3)
+    names = sorted(t.name for t in eng.under(opts.handle, "text") if t.name.startswith(b"olb"))
+    assert names == sorted(b"olb%d" % k for k in range(27, 36))
+    tags = dict((b.name, b.tag) for b in eng.under(opts.handle, "button"))
+    assert tags[b"ob133"] == 266 and tags[b"ob135"] == 270 and len(tags) == 9
+    head = next(t for t in eng.under(opts.handle, "text") if t.name == b"thead")
+    assert head.text == b"Options: ZoomOut! (page 4 of 5)"
+    # A setting's elements are named by its number, three digits too: no name
+    # of one setting is another's (`ob1` + 12 and `ob11` + 2 would be, were
+    # there a prefix `ob11`), and no tag either.
+    opts, eng = grouped_view([(b"", 130)], page=13)
+    made = [name for parent, name in eng.adds if parent == opts.handle]
+    assert len(made) == len(set(made))
+    tags = dict((b.name, b.tag) for b in eng.under(opts.handle, "button"))
+    assert tags == dict((b"ob1%d" % k, 200 + 2 * k) for k in range(117, 126))
+    # ... and over a whole file of a thousand, every name and tag once
+    seen_names, seen_tags = set(), set()
+    for page in (0, 1, 11, 12, 110, 111):
+        opts, eng = grouped_view([(b"", 1000)], page=page)
+        for el in eng.under(opts.handle):
+            if el.name in (b"sh", b"thead", b"txtbtn"):
+                continue
+            assert el.name not in seen_names
+            seen_names.add(el.name)
+            if el.kind == "button":
+                assert el.tag not in seen_tags and 200 <= el.tag < 2200
+                seen_tags.add(el.tag)
+    assert b"ob1999" in seen_names and 2198 in seen_tags
+
+
+def test_the_strip_holds_the_list_of_groups_and_the_search_box():
+    opts, eng = grouped_view(SIZES, group=1)
+    # the rows start where the lists do and end where they always did
+    assert (opts.y, opts.h) == (110 + HEAD_OFF, 740 - 230 - 50)
+    combo = win(eng, b"main.wnd.ogroup")
+    assert combo.kind == "combo" and combo.event == b"EventQmManager"
+    assert combo.items == [(b"General (2)", 0), (b"Match interface (3)", 1), (b"Camera (6)", 2),
+                           (b"All settings (11)", 3)]
+    assert (combo.sel, combo.count, combo.scroll) == (1, 4, 0)
+    # made after the rows, so its open list lies over them
+    order = [eng.els[c].name for c in win(eng, b"main.wnd").children]
+    assert order.index(b"ogroup") > order.index(b"opts")
+    caps = dict((t.name, (t.text, t.x, t.y)) for t in eng.under(win(eng, b"main.wnd").handle, "text")
+                if t.name in (b"tgroup", b"tsearch"))
+    assert caps == {b"tgroup": (b"Group:", 40, 70), b"tsearch": (b"Search:", 490, 70)}
+    assert (combo.x, combo.w) == (120, 330)
+    find = win(eng, b"sbox.ofind")
+    assert find.text == b"" and win(eng, b"sbox").visible
+    assert (find.x, find.y, find.w) == ((1920 - 1100) // 2 + 570, (1080 - 740) // 2 + 52, 260)
+    assert win(eng, b"fbox").visible is False             # the lists' filter is not this view's
+    # the group alone: its settings from the first row, no title, one page
+    texts = named(eng, opts)
+    assert sorted(texts) == sorted([b"thead"] + [b"olb%d" % k for k in (2, 3, 4)]
+                                   + [b"oval%d" % k for k in (2, 3, 4)])
+    assert [texts[b"olb%d" % k].y for k in (2, 3, 4)] == [14, 14 + 48, 14 + 96]
+    assert texts[b"thead"].text == b"Options: ZoomOut!"
+    assert b"bnext" not in buttons(eng)
+    # a text setting's box follows the rows down
+    opts, eng = grouped_view(SIZES, group=1, optsel=3, oty3=b"text", typed=b"abc")
+    box = win(eng, b"obox.otext")
+    assert box.text == b"abc" and box.y == (1080 - 740) // 2 + 110 + HEAD_OFF + 14 + 48 - 2
+
+
+def test_a_text_box_s_layer_is_shown_or_hidden_once_a_redraw():
+    # Hands-on, 2026-10-13: the search box lost the keyboard at every redraw
+    # ("ca" of "camera"). Its layer was hidden when made and shown again
+    # further down; the lists' filter, whose layer is not, keeps it.
+    def layers(eng):
+        return [(n, v) for n, v in eng.shown if n in (b"sbox", b"obox")]
+    opts, eng = grouped_view(SIZES, group=1)
+    assert sorted(layers(eng)) == [(b"obox", False), (b"sbox", True)]
+    opts, eng = grouped_view(SIZES, group=1, optsel=3, oty3=b"text", typed=b"abc")
+    assert sorted(layers(eng)) == [(b"obox", True), (b"sbox", True)]
+    # a text setting edited on another page: its box is not made, its layer hidden
+    opts, eng = grouped_view([(b"", 30)], optsel=20, oty20=b"text", typed=b"abc")
+    assert sorted(layers(eng)) == [(b"obox", False), (b"sbox", True)]
+    opts, eng = grouped_view([(b"", 10)])                 # no strip
+    assert sorted(layers(eng)) == [(b"obox", False), (b"sbox", False)]
+    for ui in (model(ROWS), model(ROWS, panel=1), model(ROWS, panel=3, mfrow=3, vn=0, vsel=-1),
+               model(ROWS, mode=2)):
+        eng = show(ui, rt=dict(uiapply=1))
+        assert sorted(layers(eng)) == [(b"obox", False), (b"sbox", False)], ui
+
+
+def test_a_search_shows_what_it_found_under_the_titles_and_says_how_many():
+    opts, eng = grouped_view(SIZES, group=1, query=b"camera")
+    texts = named(eng, opts)
+    assert texts[b"thead"].text == b"Options: ZoomOut! - 6 found"
+    assert texts[b"ogh0"].text == b"Camera" and sorted(n for n in texts if n.startswith(b"olb")) == sorted(
+        b"olb%d" % k for k in range(5, 11))
+    assert win(eng, b"sbox.ofind").text == b"camera" and b"onone" not in texts
+    # a search goes over every group: the list says All settings meanwhile
+    assert win(eng, b"main.wnd.ogroup").sel == 3
+    # nothing found: the rows say so, and how to get back
+    opts, eng = grouped_view(SIZES, group=1, query=b"zzz")
+    texts = named(eng, opts)
+    assert sorted(texts) == [b"onone", b"thead"]
+    assert texts[b"onone"].text == b"No setting has this in its name. Esc empties the search."
+    assert texts[b"thead"].text == b"Options: ZoomOut! - 0 found"
+    assert eng.under(opts.handle, "button") == [] and b"bnext" not in buttons(eng)
+
+
+def test_without_groups_the_strip_is_the_search_box_alone_and_a_small_mod_has_none():
+    # eleven settings are more than a page
+    opts, eng = grouped_view([(b"", 11)])
+    assert win(eng, b"main.wnd.ogroup") is None and win(eng, b"sbox").visible
+    caps = [(t.name, t.x) for t in eng.under(win(eng, b"main.wnd").handle, "text")
+            if t.name in (b"tgroup", b"tsearch")]
+    assert caps == [(b"tsearch", 40)] and win(eng, b"sbox.ofind").x == (1920 - 1100) // 2 + 120
+    assert named(eng, opts)[b"thead"].text == b"Options: ZoomOut! (page 1 of 2)"
+    assert len([t for t in eng.under(opts.handle, "text") if t.name.startswith(b"olb")]) == 9
+    # ten settings and no group: the view of 0.1.5 - no strip, ten rows from the top
+    opts, eng = grouped_view([(b"", 10)])
+    assert (opts.y, opts.h) == (60 + HEAD_OFF, 740 - 230)
+    assert win(eng, b"main.wnd.ogroup") is None and win(eng, b"sbox").visible is False
+    assert [t.name for t in eng.under(win(eng, b"main.wnd").handle, "text")
+            if t.name in (b"tgroup", b"tsearch")] == []
+    assert len([t for t in eng.under(opts.handle, "text") if t.name.startswith(b"olb")]) == 10
+    assert named(eng, opts)[b"thead"].text == b"Options: ZoomOut!"
+
+
+def test_a_long_list_of_groups_scrolls_and_a_long_title_is_cut_in_it():
+    sizes = [(b"Group %02d" % g, 2) for g in range(14)] + [(b"W" * 60, 1)]
+    opts, eng = grouped_view(sizes, group=0)
+    combo = win(eng, b"main.wnd.ogroup")
+    assert (combo.count, combo.scroll, len(combo.items)) == (16, 12, 16)
+    # 290 wide at 8 a byte: 36 bytes, the last three the dots
+    assert combo.items[14] == (b"W" * 33 + b"...", 14) and combo.items[15] == (b"All settings (29)", 15)
+    assert (1000 + CONST["gc_font_serif_12"], b"W" * 60 + b" (1)") in eng.measured
 
 
 def test_the_mod_files_view_lists_the_game_files_and_how_they_are_treated():

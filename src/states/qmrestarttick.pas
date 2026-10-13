@@ -155,12 +155,41 @@ begin
    qmLog('tick: the guard notice opened, mode='+IntToStr(ParserGetIntValueByKeyByHandle(qmTkUi, 'mode'))+' lines='+IntToStr(ParserGetIntValueByKeyByHandle(qmTkUi, 'gdln')));
 end
 else
-//! A harness run's switch (qmBoot, qm_show_ui.flag): the window opens once.
-if (ParserGetIntValueByKeyByHandle(qmTkRt, 'uishow')=1) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'gdshow')=0) and (ParserGetIntValueByKeyByHandle(qmTkUi, 'ready')=1) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'busy')=0) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'rs')=0) and (gMap.gamestage=gc_map_gamestage_none) then
+//! A harness run's switch (qmBoot, qm_show_ui.flag): the window opens once -
+//! not before qm_rt uishowat (tenths of a second; 0 for the switch file),
+//! which a SelfTest case that leaves a view sets a few seconds ahead: the
+//! case runs in the boot's own frame, and a window opened there goes with the
+//! GUI the start-up's second DoCreate builds anew (run g21v1, 2026-10-13:
+//! opened at log line 175, DoCreate at 186).
+if (ParserGetIntValueByKeyByHandle(qmTkRt, 'uishow')=1) and (Floor(_misc_GetRealTime*10)>=ParserGetIntValueByKeyByHandle(qmTkRt, 'uishowat')) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'gdshow')=0) and (ParserGetIntValueByKeyByHandle(qmTkUi, 'ready')=1) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'busy')=0) and (ParserGetIntValueByKeyByHandle(qmTkRt, 'rs')=0) and (gMap.gamestage=gc_map_gamestage_none) then
 begin
    ParserSetIntValueByKeyByHandle(qmTkRt, 'uishow', 0);
    GUIExecuteState('ShowQmManager');
    qmLog('tick: the window opened for the run (qm_show_ui.flag)');
+   ParserSetIntValueByKeyByHandle(qmTkRt, 'uishowat', 0);
+   //! A SelfTest case's view (qmCaseOpt `keep`): a window a case leaves open
+   //! does not outlive the start-up, whose second DoCreate builds the GUI
+   //! anew, so the case leaves the steps to its view instead - qm_rt uiplayn,
+   //! and per step uiplayc<k> the command, uiplaya<k> its number, uiplayt<k>
+   //! its text. The controller gets them here, the window open, and the
+   //! window is drawn again.
+   var qmTkPn : Integer = ParserGetIntValueByKeyByHandle(qmTkRt, 'uiplayn');
+   var qmTkPk : Integer;
+   if (qmTkPn>0) then
+   begin
+      ParserSetIntValueByKeyByHandle(qmTkRt, 'uiplayn', 0);
+      for qmTkPk:=0 to qmTkPn-1 do
+      begin
+         ParserSetValueByKeyByHandle(qmTkUi, 'cmd', ParserGetValueByKeyByHandle(qmTkRt, 'uiplayc'+IntToStr(qmTkPk)));
+         ParserSetIntValueByKeyByHandle(qmTkUi, 'arg', ParserGetIntValueByKeyByHandle(qmTkRt, 'uiplaya'+IntToStr(qmTkPk)));
+         ParserSetIntValueByKeyByHandle(qmTkUi, 'argside', 1);
+         ParserSetIntValueByKeyByHandle(qmTkUi, 'argto', 0);
+         ParserSetValueByKeyByHandle(qmTkUi, 'argtext', ParserGetValueByKeyByHandle(qmTkRt, 'uiplayt'+IntToStr(qmTkPk)));
+         StateMachineExecuteState(GetTriggerManagerStateMachineHandle('qm_core'), 'qmUiAct', 0);
+      end;
+      GUIExecuteState('ShowQmManager');
+      qmLog('tick: the window shows the view a case left, steps='+IntToStr(qmTkPn));
+   end;
 end;
 //! The notice outlives a rebuilt menu. The game's second start-up DoCreate
 //! builds the GUI anew, and the window went with it while qm_ui mode stayed
