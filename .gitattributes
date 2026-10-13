@@ -1,3 +1,14 @@
+# A working tree has the same line endings on every machine, whatever its
+# core.autocrlf says: LF for every text file. The tests read the sources as
+# bytes, and a checkout that turned them into CRLF (Git for Windows does by
+# default) fails five of them.
+* text=auto eol=lf
+
+# Quartermaster's own list of known mods is the exception: the build copies
+# these files into the mod as they are, and a file of the mod is game input,
+# CRLF throughout. A checkout that left them LF fails the build's lint.
+src/known/*.cfg text eol=crlf
+
 # The built mod is game input: the engine reads CRLF files byte by byte, so git
 # must never convert line endings in it, on any platform or core.autocrlf setting.
 dist/** -text
