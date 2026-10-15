@@ -238,7 +238,7 @@ GAME = r"C:\Program Files (x86)\Steam\steamapps\common\Cossacks 3"
 LOCK_NAME = "swfp_game.lock"
 GAME_IMAGES = ("cossacks.exe", "modman.exe")
 
-QM_VERSION = "0.1.6"
+QM_VERSION = "0.1.7"
 
 IDX_REL = "data/quartermaster/vanilla.idx"
 IDX_FORMAT = 1
