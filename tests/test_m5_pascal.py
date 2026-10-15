@@ -895,7 +895,8 @@ def boot_engine(marker=None, changed=0, mods=None, hook=b"", autotest=None, know
         files[CASES + b"qm_m5_%s.cfg" % name] = b"case\r\n"
     eng = Engine(files, mods=mods)
     load(eng, "qmBoot", "qmMarkerLoad", "qmMarkerSave", "qmModList", "qmOrder", "qmModsIni",
-         "qmKnown", "qmGlobals", "qmGuard", "qmAbout", "qmAbRules", "qmSettings", "qmLastStart")
+         "qmKnown", "qmGlobals", "qmGuard", "qmAbout", "qmAbRules", "qmSettings", "qmLastStart",
+         "qmRestart")
 
     def fingerprint():
         eng.set("qm_rt", fp=b"1-2-3")
@@ -923,14 +924,56 @@ def test_a_first_boot_alone_writes_its_marker_and_needs_no_restart():
     assert KNOWN in eng.written
 
 
-def test_a_boot_that_changed_a_file_schedules_the_restart():
+def test_a_boot_that_changed_a_file_restarts_at_its_end():
+    """Hands-on, 2026-10-14: this process loaded the outputs the generation
+    replaced, and the old DoProgress did not compile, so a restart left to the
+    tick never came. The boot restarts itself, last, after its log line."""
     eng, _rt = boot_engine(changed=2)
     eng.now = 500.04
     run(eng, "qmBoot")
-    assert eng.key(b"qm_rt", b"rs") == b"1" and eng.key(b"qm_rt", b"rskind") == b"auto"
-    assert eng.key(b"qm_rt", b"rsdue") == b"%d" % (5000 + 11)
+    assert eng.restarted == ["lan", "steam", "restart"]
+    assert eng.key(b"qm_rt", b"rs") == b"2" and eng.key(b"qm_rt", b"rskind") == b"auto"
+    assert eng.key(b"qm_rt", b"busy") == b"0"
     assert B.parse_marker(eng.written[STATE]).phase == B.WRITTEN
-    assert "qmSelfTest" not in eng.calls
+    assert "qmSelfTest" not in eng.calls and eng.calls[-1] == "qmRestart"
+    done = [k for k, l in enumerate(eng.log) if l.startswith(b"[qm] boot done regen=True")]
+    assert len(done) == 1 and eng.log[done[0] + 1:] == [
+        b"[qm] restart now kind=auto why=outputs-changed at the end of the boot: "
+        b"this start loaded the files it rewrote",
+        b"[qm] restart: LanShutdown, SteamwrapFree, RestartApplicationParam"]
+    # Nothing is left for the tick to run again.
+    load(eng, "qmTick")
+    eng.now = 600.0
+    run(eng, "qmTick")
+    assert eng.restarted == ["lan", "steam", "restart"]
+
+
+def test_a_boot_in_a_map_leaves_its_restart_to_the_tick():
+    eng, _rt = boot_engine(changed=2)
+    eng.now = 500.04
+    eng.gamestage = 1
+    run(eng, "qmBoot")
+    assert eng.restarted == [] and "qmRestart" not in eng.calls
+    assert eng.key(b"qm_rt", b"rs") == b"1" and eng.key(b"qm_rt", b"rsdue") == b"%d" % (5000 + 11)
+    assert not any(b"restart now" in l for l in eng.log)
+
+
+def test_a_generation_that_did_not_finish_leaves_its_restart_to_the_tick():
+    """A changed file asks for the restart, but a generation that did not end
+    `ok` leaves the marker in the phase the start set - here `booting`, which
+    only the first main-menu frame may confirm before the game restarts."""
+    marker = B.Marker(gen=1, hash=b"0-0-0", phase=B.WRITTEN, rk=B.NONE, boots=4)
+    eng, _rt = boot_engine(marker, changed=2, known=[(QM, False)])
+
+    def generate():
+        eng.set("qm_gen", status=b"failed", gen=2, changed=2, sn=0)
+    eng.states["qmgenerate"] = Fake(generate)
+    eng.now = 500.04
+    run(eng, "qmBoot")
+    assert eng.key(b"qm_guard", b"kind") == b"auto" and eng.key(b"qm_guard", b"rwhy") == B.OUTPUTS
+    assert B.parse_marker(eng.written[STATE]).phase == B.BOOTING
+    assert eng.restarted == [] and eng.key(b"qm_rt", b"rs") == b"1"
+    assert eng.key(b"qm_rt", b"confirm") == b"1"
 
 
 def test_a_stable_boot_loads_the_last_report_and_logs_stable():
@@ -956,7 +999,9 @@ def test_the_i5_switch_and_the_loop_guard_in_the_boot():
     eng, _rt = boot_engine(changed=1, autotest=b"", switches=(b"unstable", b"restart"))
     run(eng, "qmBoot")
     assert eng.key(b"qm_gen_in", b"gensalt") == b"1"
-    assert eng.key(b"qm_rt", b"rs") == b"1"
+    # The SelfTest ran in the boot, before the boot's own restart.
+    assert eng.key(b"qm_rt", b"rs") == b"2" and eng.restarted == ["lan", "steam", "restart"]
+    assert eng.calls.index("qmSelfTest") < eng.calls.index("qmRestart")
     first = eng.written[STATE]
     # The next start: the fingerprint moved with the salt - no second restart.
     eng2, _rt = boot_engine(B.parse_marker(first), changed=1, autotest=b"",
@@ -1001,6 +1046,8 @@ def test_a_folder_made_before_the_apply_restart_is_not_a_loop_in_the_boot(fpold,
     elif restart:
         assert (eng.key(b"qm_guard", b"kind"), eng.key(b"qm_guard", b"refused")) == (B.AUTO, b"")
         assert eng.key(b"qm_rt", b"rs") == b"1" and not fail
+        # mods.ini alone: no file this process loaded changed - the tick's.
+        assert eng.restarted == [] and eng.key(b"qm_guard", b"rwhy") == B.MODSINI
     else:
         assert eng.key(b"qm_guard", b"refused") == B.LOOP and eng.key(b"qm_rt", b"rs") == b""
         assert fail

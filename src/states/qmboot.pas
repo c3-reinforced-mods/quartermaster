@@ -28,7 +28,8 @@ requires: version
 //!              otherwise)
 //!   selftest   <save>\qm_autotest.cfg only, boot only (plan G18)
 //!   schedule   qm_rt rs / rsdue / rskind: qmTick restarts at least 1 s after
-//!              this last write, on a main-menu frame
+//!              this last write, on a main-menu frame - or, after this start
+//!              rewrote its outputs, the boot restarts itself (below)
 //! qm_rt busy is 1 while this runs, so qmTick never runs into it.
 //!
 //! The I5 test: the SelfTest case file qm_m5_unstable.cfg makes the
@@ -398,12 +399,43 @@ begin
 end;
 //! The restart, scheduled last: at least 1 s after this boot's last write.
 var qmBtNow : Integer = Floor(_misc_GetRealTime*10);
+//! An automatic restart after this start rewrote its outputs (the marker says
+//! `written`) runs here, at the end of the boot, not from qmTick. This process
+//! loaded the files the generation replaced, and the engine compiles a state
+//! when it first runs it, from the text it loaded: an old DoProgress merged
+//! with a mod's library that has since lost a function does not compile, and
+//! the frame hook goes with it (hands-on, 2026-10-14: Reinforced - Core
+//! changed with the game closed, "Compile script error: DoProgress", no
+//! restart, a blank screen for the lobby). The hook that ran this boot did
+//! compile, and qmRestart is Quartermaster's own. RestartApplicationParam
+//! returns, and the engine ends the process later: the start-up guard's call,
+//! made before the libraries compile, ended its life right after the
+//! start-up's second DoCreate, with DoProgress broken as well
+//! (cos_261010_130720.log:7, :164-169; the next life started 7 s after it).
+//! Run g22 (2026-10-15) proved this call the same way: a test mod updated
+//! with the game closed, the old DoProgress did not compile, the life ended
+//! after the second DoCreate and the next one, 7 s later, booted clean; 0.1.6
+//! under the same update stayed in its first life (no tick, no restart).
+//! When the start-up guard restarted this process already (it moved
+//! Quartermaster last), this second call changes nothing: one restart, one
+//! next life (run g22g).
+//! Every other restart stays with qmTick: after mods.ini alone no file this
+//! process loaded changed; a generation that did not finish leaves the marker
+//! in the phase this start set, and `booting` wants the first main-menu
+//! frame's confirm before a restart (ref/boot.py restart_at_boot); an Apply's
+//! the player asked for in the window.
+var qmBtNowRs : Boolean = False;
 if (ParserGetIntValueByKeyByHandle(qmBtG, 'restart')=1) then
 begin
    ParserSetIntValueByKeyByHandle(qmBtRt, 'rs', 1);
    ParserSetIntValueByKeyByHandle(qmBtRt, 'rsdue', qmBtNow+11);
    ParserSetValueByKeyByHandle(qmBtRt, 'rskind', ParserGetValueByKeyByHandle(qmBtG, 'kind'));
    ParserSetValueByKeyByHandle(qmBtRt, 'rswhy', ParserGetValueByKeyByHandle(qmBtG, 'rwhy'));
+   if (ParserGetValueByKeyByHandle(qmBtG, 'kind')='auto') and (ParserGetValueByKeyByHandle(qmBtSt, 'phase')='written') and (gMap.gamestage=gc_map_gamestage_none) then
+   begin
+      qmBtNowRs := True;
+      ParserSetIntValueByKeyByHandle(qmBtRt, 'rs', 2);
+   end;
 end;
 if (ParserGetValueByKeyByHandle(qmBtSt, 'phase')='booting') then
 ParserSetIntValueByKeyByHandle(qmBtRt, 'confirm', 1);
@@ -412,3 +444,8 @@ ParserSetIntValueByKeyByHandle(qmBtRt, 'busy', 0);
 qmLog('boot done regen='+BoolToStr(qmBtRegen)+' why='+qmBtWhy+' restart='+ParserGetValueByKeyByHandle(qmBtG, 'kind')+' refused='+qmBtRef+' mods.ini='+ParserGetValueByKeyByHandle(qmBtIni, 'action')+' new='+IntToStr(ParserGetIntValueByKeyByHandle(qmBtKn, 'newn'))+' report='+qmBtTag+' ms='+FloatToStr((_misc_GetRealTime-qmBtT0)*1000));
 if (not qmBtRegen) and (qmBtRef='') and (ParserGetIntValueByKeyByHandle(qmBtG, 'restart')=0) and (not qmBtApply) and (qmBtSync=0) then
 qmLog('boot stable gen='+IntToStr(ParserGetIntValueByKeyByHandle(qmBtSt, 'gen'))+' hash='+ParserGetValueByKeyByHandle(qmBtSt, 'hash')+' boots='+IntToStr(ParserGetIntValueByKeyByHandle(qmBtSt, 'boots')));
+if (qmBtNowRs) then
+begin
+   qmLog('restart now kind=auto why='+ParserGetValueByKeyByHandle(qmBtG, 'rwhy')+' at the end of the boot: this start loaded the files it rewrote');
+   StateMachineExecuteState(qmBtCore, 'qmRestart', 0);
+end;

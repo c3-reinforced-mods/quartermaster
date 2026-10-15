@@ -351,6 +351,55 @@ def test_restart_timing():
         assert (B.restart_due(now)) / 10.0 - t >= 1.0
 
 
+def test_the_boot_restarts_at_once_only_after_rewriting_what_it_loaded():
+    """Hands-on, 2026-10-14: the outputs this process loaded were made with
+    the mod's old build, the old DoProgress did not compile, and a restart
+    left to the tick never came. A start that rewrote its outputs restarts at
+    the end of its boot; the others still wait for the tick."""
+    m = M(gen=297, hash=FP, phase=B.BOOTED)
+    p = B.boot_plan(m, FP2, False, False)
+    r = B.restart_plan(m, p, FP2, 9, False)
+    n = B.next_marker(m, p, r, FP2, 298, True, 9, [])
+    assert (p.why, r.kind, r.why, n.phase) == (B.INPUTS, B.AUTO, B.OUTPUTS, B.WRITTEN)
+    assert B.restart_at_boot(r, n)
+    assert not B.restart_at_boot(r, n, map_loaded=True)
+    # mods.ini alone: the marker stays as the start set it.
+    for phase in (B.BOOTED, B.WRITTEN):
+        m2 = M(gen=3, hash=FP, phase=phase)
+        p2 = B.boot_plan(m2, FP, False, False)
+        r2 = B.restart_plan(m2, p2, FP, 0, True)
+        n2 = B.next_marker(m2, p2, r2, FP, 4, True, 0, [])
+        assert (r2.restart, r2.why) == (True, B.MODSINI) and not B.restart_at_boot(r2, n2)
+    # A generation that did not finish: `booting` waits for the confirm.
+    m3 = M(gen=3, hash=FP, phase=B.WRITTEN)
+    p3 = B.boot_plan(m3, FP2, False, False)
+    r3 = B.restart_plan(m3, p3, FP2, 2, False)
+    n3 = B.next_marker(m3, p3, r3, FP2, 4, False, 2, [])
+    assert r3.restart and n3.phase == B.BOOTING and not B.restart_at_boot(r3, n3)
+    # An Apply: the player's restart, after the window's notice.
+    pa = B.boot_plan(M(hash=FP), FP2, False, False, apply=True)
+    ra = B.restart_plan(M(hash=FP), pa, FP2, 1, False)
+    na = B.next_marker(M(hash=FP), pa, ra, FP2, 2, True, 1, [])
+    assert (ra.kind, na.phase) == (B.APPLY, B.WRITTEN) and not B.restart_at_boot(ra, na)
+    # Refused or not wanted: nothing to restart, whatever the plan's kind says.
+    assert not B.restart_at_boot(B.RestartPlan(True, False, B.NONE, B.OUTPUTS, B.LOOP),
+                                 M(phase=B.WRITTEN))
+    assert not B.restart_at_boot(B.RestartPlan(True, False, B.AUTO, B.OUTPUTS, None),
+                                 M(phase=B.WRITTEN))
+
+
+def test_the_2026_10_14_switch_restarts_once_and_the_next_start_is_clean():
+    # Generation 297 booted with the old build; the new build changes the
+    # inputs, the boot rewrites nine files and restarts by itself - whether or
+    # not a main-menu frame ever runs - and the start after it is stable.
+    trace, m = B.simulate([B.Life(FP, changed=0), B.Life(FP2, changed=9, menu=False),
+                           B.Life(FP2)], M(gen=296, hash=FP, phase=B.BOOTED))
+    assert [p.why for p, _r, _n in trace] == [B.STABLE, B.INPUTS, B.STABLE]
+    assert [B.restart_at_boot(r, n) for _p, r, n in trace] == [False, True, False]
+    assert B.auto_restarts(trace) == 1
+    assert (m.phase, m.rows, m.rk) == (B.BOOTED, 0, B.NONE)
+
+
 # ------------------------------------------------------------ exhaustive
 PHASES = (B.WRITTEN, B.BOOTING, B.BOOTED)
 MODES = (B.NORMAL, B.WTA)
@@ -389,6 +438,14 @@ def test_every_decision_keeps_the_guards():
                 assert n.rk == B.AUTO
             if r.restart and r.kind == B.APPLY:
                 assert apply and (n.rows, n.rhash, n.rcount, n.rk) == (0, b"-", 0, B.APPLY)
+            # The boot's own restart: an automatic one after this start's
+            # generation changed a file, never for mods.ini alone; every other
+            # automatic restart leaves the marker for the tick to confirm.
+            if B.restart_at_boot(r, n):
+                assert r.kind == B.AUTO and r.why == B.OUTPUTS and not apply and not sync
+                assert p.regen and changed and n.phase == B.WRITTEN
+            elif r.restart and r.kind == B.AUTO:
+                assert r.why == B.MODSINI and n.phase != B.WRITTEN
             if not p.regen:
                 assert (n.gen, n.hash, n.outs) == ((m.gen, m.hash, m.outs) if m else (0, b"-", []))
             else:

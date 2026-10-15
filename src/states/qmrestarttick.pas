@@ -20,6 +20,8 @@ requires:
 //!            checked) and with no MP sync, qmRestart. A restart still waiting
 //!            a minute after it was due (the player went into a battle) is
 //!            dropped: its changes load at the next start (restart_now).
+//!            The restart of a start that rewrote its outputs is not here:
+//!            the boot runs it at its end (qmboot.pas; rs = 2 then).
 //!   hooks    whenever the hook counters of qm_hk moved, one log line: the
 //!            evidence of how often the hook points ran (capability probe 11).
 //!   notice   before a restart it runs, the manager's restart notice
@@ -77,7 +79,10 @@ requires:
 //! confirm, an Apply - and leaves out what belongs to a frame: the captions
 //! and lines it draws through EventQmManager (the window's event state may be
 //! the one running the pump), the notices and the run switches, and the
-//! restart, which qmPump runs itself, as no later frame would.
+//! restart, which qmPump runs itself, as no later frame would. The boot's
+//! restart after such a start no longer waits for either: since 2026-10-15
+//! the boot runs it itself (qmboot.pas; hands-on, 2026-10-14: the player went
+//! for the lobby, not the window, and no restart came).
 var qmTkRt : Integer = ParserSelectByKey('qm_rt');
 if (qmTkRt=0) then
 exit;

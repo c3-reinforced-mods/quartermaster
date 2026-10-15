@@ -45,6 +45,12 @@ The four mods and the edge each one exercises:
                   QMTestWASD, never loaded with it.
   QMTestMany      only an about.cfg: 40 settings under `group` lines, more
                   than the 32 a mod could declare until 0.1.5
+  QMTestStale     doprogress.inc calling a function its parser.script adds to
+  QMTestStaleB    vanilla's; B is the next build of the same mod - deployed in
+                  A's folder, mod.ini alike - which renames the function and
+                  the call, so a DoProgress merged with A does not compile with
+                  B's library: the start after an update with the game closed
+                  (0.1.7, hands-on 2026-10-14)
 """
 import argparse
 import hashlib
@@ -67,9 +73,12 @@ CONFLICT = "QMTestConflict"
 BROKEN = "QMTestBroken"
 FIXTURES = (WASD, CAMSPEED, CONFLICT, BROKEN, "QMTestWASD2", "QMTestCam2", "QMTestDataA",
             "QMTestDataB", "QMTestDataA6", "QMTestDataB6",  # Phase B: build_wasd2, CAM2, build_data
-            "QMTestMany")                                   # 0.1.6: many_about
+            "QMTestMany",                                   # 0.1.6: many_about
+            "QMTestStale", "QMTestStaleB")                  # 0.1.7: build_stale
 
 REGISTERSHORTCUTS = "data/gui/menu.inc/registershortcuts.inc"
+DOPROGRESS = "data/gui/menu.inc/doprogress.inc"
+PARSER_SCRIPT = "data/scripts/lib/parser.script"
 ONCAMERA = "data/gui/menu.inc/oncamera.inc"
 HOTKEYSETTINGS = "data/gui/menu.inc/hotkeysettings.inc"
 HOTKEYS_CFG = "data/game/var/hotkeys.cfg"
@@ -322,6 +331,41 @@ def many_about():
     return CRLF.join(lines) + CRLF
 
 
+# ------------------------------------------------------------ QMTestStale
+#: Two builds of one mod (0.1.7). Hands-on, 2026-10-14: Reinforced - Core
+#: changed with the game closed; the process loaded Quartermaster's outputs
+#: merged with the old build, whose DoProgress called a function the new
+#: libraries no longer had, and it did not compile. Here A's parser.script is
+#: vanilla's with one function added - a mod's copy of a library replaces the
+#: whole file (docs/plan.md S17; run g17 shipped vanilla's parser.script that
+#: way) - and A's DoProgress calls it; B has the function under another name
+#: and calls that. The call is never true, so neither logs a line.
+STALE = "QMTestStale"
+STALE_B = "QMTestStaleB"
+#: The last lines of vanilla's parser.script, where the function goes after.
+STALE_LIB_END = (b"      ParserLoadFromFileByHandle(Result, gc_filepath_battles);" + CRLF
+                 + b"   end;" + CRLF + b"end;" + CRLF)
+#: The DoProgress line the call goes in front of: after the LAN block, clear
+#: of Quartermaster's hook at the state's 10th code line (plan S5).
+STALE_ANCHOR = code_line(b"//_misc_ProfilerBegin('gui:doprogress');")
+
+
+def stale_function(name):
+    return CRLF.join([b"", b"// " + name, b"//",
+                      b"function " + name + b"(value : Integer) : Integer;",
+                      b"begin", b"   Result := value;", b"end;", b""])
+
+
+def build_stale(game, name):
+    """One build: the library function `name` and DoProgress calling it."""
+    lib = replace_once(vanilla(game, PARSER_SCRIPT), STALE_LIB_END,
+                       STALE_LIB_END + stale_function(name), "stale/parser.script")
+    call = code_line(b"if (" + name + b"(0)=1) then Log('QMTEST stale');")
+    dp = replace_once(vanilla(game, DOPROGRESS), STALE_ANCHOR, call + STALE_ANCHOR,
+                      "stale/doprogress.inc")
+    return {PARSER_SCRIPT: lib, DOPROGRESS: dp}
+
+
 # ------------------------------------------------------------ QMTestData*
 #: The data merge (plan S3, S10; M9). Each mod adds one formation - a copy of
 #: vanilla's LINE3 record under a new id, so it is a formation the loader can
@@ -454,10 +498,14 @@ def build_all(game=None, reference=None):
         WASD2: build_wasd2(wasd),
         CAM2: {"about.cfg": CAM2_ABOUT},
         MANY: {"about.cfg": many_about()},
+        STALE: build_stale(game, b"_parser_QmTestStaleOld"),
+        STALE_B: build_stale(game, b"_parser_QmTestStaleNew"),
     }
     mods.update(build_data(game))
     for name, files in mods.items():
         files["mod.ini"] = mod_ini(name)
+    # B is the next build of A: the same folder, the same mod.ini.
+    mods[STALE_B]["mod.ini"] = mod_ini(STALE)
     return mods
 
 

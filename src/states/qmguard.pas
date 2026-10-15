@@ -25,7 +25,8 @@ requires: ownfiles
 //! one per hash),
 //! then the whole next marker into qm_state, with the FileAge of
 //! every output the generation left in the mirror - the stamps the next boot
-//! compares (damaged). qmBoot saves it and schedules the restart.
+//! compares (damaged). qmBoot saves it and schedules the restart, or runs it
+//! itself after a start that rewrote its outputs (qmboot.pas).
 //!
 //! qm_guard keys: step; plan: regen (0/1), mode, why, followed, suspect,
 //! phase, boots, damaged, fp, fpold; restart: wanted, restart, kind, rwhy,

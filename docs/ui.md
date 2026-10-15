@@ -231,6 +231,10 @@ frame on which a restart it runs is scheduled - so the boot's own restarts
 get it too - and runs the restart on a later frame, at least a tenth of a
 second after it (`qm_rt rsnote`). A notice whose restart is gone (the request
 withdrawn, the restart dropped) is stale and the window browses again.
+*Corrected 2026-10-15:* not every restart of the boot's any more. One after
+a start that rewrote its outputs runs at the end of the boot, before any
+main-menu frame (docs/plan.md S8), so it shows no notice, as the start-up
+guard's restart never did; the report after it says why the game restarted.
 
 ## When no frame runs the tick
 
@@ -276,7 +280,15 @@ Not covered: a player who never opens the window in such a start gets no
 restart from Quartermaster in it - nothing of Quartermaster's runs without
 a frame or a click - and the new files load at the next start. The restart
 from the window's states instead of a DoProgress frame is not yet tried in
-the game.
+the game. *Corrected 2026-10-15:* the restart of such a start no longer
+waits for either. A merged DoProgress that does not compile was made before
+the mods changed - a mod switched off, or an update that dropped a function
+its own merged file called and so changed that file too - and the boot of
+that start regenerates; since 0.1.7 it restarts the game itself at its end
+(docs/plan.md S8; hands-on, 2026-10-14: the player went for the lobby, not
+the window, and the restart never came). What still needs the window in
+such a start is the rest of the tick's work: an Apply, the activation
+check, the settings' save.
 
 ## Main menu button
 

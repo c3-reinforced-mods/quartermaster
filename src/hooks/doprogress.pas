@@ -21,9 +21,12 @@ requires:
 //! the menu (state.cfg `booted`), runs a confirmed Apply of the manager window
 //! (qm_rt uiapply, docs/ui.md) and the restart - at least 1 s after the last
 //! write, on a main-menu frame, as the probe-5 restart did from a DoProgress
-//! hook (docs/research/context-2026-09-27.md section 3). A state run costs next to
-//! nothing (20k calls < 1 ms, docs/research/context-2026-09-27.md section 3)
-//! and qmTick returns after a few parser reads when there is nothing to do.
+//! hook (docs/research/context-2026-09-27.md section 3); not the one after a
+//! start that rewrote its outputs, which the boot runs itself, as this very
+//! state may then be an old merge that does not compile (qmboot.pas). A
+//! state run costs next to nothing (20k calls < 1 ms,
+//! docs/research/context-2026-09-27.md section 3) and qmTick returns after a
+//! few parser reads when there is nothing to do.
 //! The manager qm_core is looked up by name each frame and created only when
 //! missing: the CameraControl hook normally re-creates it after every
 //! InitMap, so this happens only when that hook is gone.

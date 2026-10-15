@@ -377,6 +377,8 @@ def test_the_apply_boot_says_the_order_was_chosen_in_the_manager():
     assert any(l.startswith(b"OK mods.ini was put into the load order chosen in the manager")
                for l in lines)
     assert eng.key(b"qm_guard", b"kind") == b"apply" and eng.key(b"qm_rt", b"rs") == b"1"
+    # The Apply's restart is the tick's, after its notice: never the boot's.
+    assert eng.restarted == []
     assert O.parse_order(eng.written[ORDER]) == [WASD, CONF]
 
 

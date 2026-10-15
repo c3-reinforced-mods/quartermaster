@@ -35,6 +35,8 @@ def test_the_fixtures_with_the_planned_files(F, mods):
                          F.HOTKEYS_CFG, "about.cfg", "mod.ini"]),
         F.CAM2: ["about.cfg", "mod.ini"],
         F.MANY: ["about.cfg", "mod.ini"],
+        F.STALE: sorted([F.DOPROGRESS, F.PARSER_SCRIPT, "mod.ini"]),
+        F.STALE_B: sorted([F.DOPROGRESS, F.PARSER_SCRIPT, "mod.ini"]),
         F.DATA_A: sorted([F.FORMATIONS_CFG, F.OBJCUSTOM_CFG, "mod.ini"]),
         F.DATA_B: sorted([F.FORMATIONS_CFG, F.OBJCUSTOM_CFG, "mod.ini"]),
         F.DATA_A6: sorted([F.FORMATIONS_CFG, "mod.ini"]),
@@ -64,6 +66,27 @@ def test_many_has_more_settings_than_the_old_limit_under_group_lines(F, mods):
     assert len(rows) == 58 and len(pages) == 7 and (b"set", 33) in pages[5]
     assert [kind for kind, _k in pages[0]] == [b"set"] * 2 + [b"head"] + [b"set"] * 6
     assert pages[2][0] == (b"more", 16)
+
+
+def test_stale_b_is_the_next_build_without_the_function_a_calls(F, mods, game_dir):
+    """0.1.7: A's DoProgress calls a function A's parser.script adds; B, the
+    next build of the same mod (its folder, its mod.ini), renamed both. Each
+    file is vanilla's with the one addition, so a DoProgress merged with A
+    names a function B's library does not have."""
+    a, b = mods[F.STALE], mods[F.STALE_B]
+    assert a["mod.ini"] == b["mod.ini"] == F.mod_ini(F.STALE)
+    old, new = b"_parser_QmTestStaleOld", b"_parser_QmTestStaleNew"
+    for files, name, other in ((a, old, new), (b, new, old)):
+        lib, dp = files[F.PARSER_SCRIPT], files[F.DOPROGRESS]
+        assert lib == F.vanilla(game_dir, F.PARSER_SCRIPT) + F.stale_function(name)
+        call = F.code_line(b"if (" + name + b"(0)=1) then Log('QMTEST stale');")
+        assert dp == F.vanilla(game_dir, F.DOPROGRESS).replace(F.STALE_ANCHOR,
+                                                               call + F.STALE_ANCHOR)
+        assert dp.count(name) == 1 and lib.count(b"function " + name + b"(") == 1
+        assert other not in dp and other not in lib
+    # Clear of Quartermaster's hook, which goes in at code line 10 (plan S5).
+    code = [ln for ln in a[F.DOPROGRESS].split(CRLF) if ln.startswith(F.CODE)]
+    assert [k for k, ln in enumerate(code) if old in ln] == [30]
 
 
 def test_wasd2_is_wasd_with_its_keys_read_from_the_settings(F, mods):
@@ -133,9 +156,11 @@ def test_mod_ini_has_the_layout_of_an_existing_local_mod(F, mods, reference_dir)
     reference = read_bytes(os.path.join(reference_dir, "mod.ini"))
     for name, files in mods.items():
         ini = files["mod.ini"]
+        # QMTestStaleB is deployed in QMTestStale's folder, with its mod.ini.
+        folder = F.STALE if name == F.STALE_B else name
         assert shape(ini) == shape(reference), name
-        assert b"   title = " + name.encode() + CRLF in ini
-        assert b"   contentfolder = mods\\" + name.encode() + CRLF in ini
+        assert b"   title = " + folder.encode() + CRLF in ini
+        assert b"   contentfolder = mods\\" + folder.encode() + CRLF in ini
         assert b"   description[*] = ;TODO(owner)" + CRLF in ini
         assert ini.endswith(b"section.end" + CRLF + CRLF)
 
@@ -239,6 +264,6 @@ def test_building_writes_nothing_into_the_reference_mod(reference_dir, tmp_path)
          "--out", str(tmp_path / "fx")],
         cwd=str(tmp_path), env=env, capture_output=True, timeout=120)
     assert proc.returncode == 0, proc.stderr.decode(errors="replace")
-    assert b"wrote 11 fixtures" in proc.stdout
+    assert b"wrote 13 fixtures" in proc.stdout
     assert os.path.isfile(str(tmp_path / "fx" / "QMTestWASD" / "mod.ini"))
     assert snapshot(tools) == before

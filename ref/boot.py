@@ -114,6 +114,26 @@ and the next start honoured both the file and the rewritten mods.ini
 LanShutdown; SteamwrapFree; RestartApplicationParam('')
 (data/gui/menu.inc/onworkshopautoupdate.inc:8-11).
 
+*Corrected 2026-10-15:* the automatic restart of a start that rewrote its
+outputs (`restart_at_boot`: kind auto, the marker `written`) runs at the end
+of the boot instead. It was believed that DoProgress, which keeps running
+with DoInitialize or CameraControl broken, always carries the tick. What it
+cost (hands-on, 2026-10-14, Reinforced - Core changed with the game closed):
+the process had loaded the outputs made with the old Core, its DoProgress
+called a function the new libraries no longer have and did not compile
+("Compile script error: DoProgress"), so no tick ran, the restart never came
+and the start stayed with the old files - a blank screen for the lobby
+(ShowCustomGame, another old merge) until the player started the game again.
+True now: those are exactly the starts that run on files out of date, the
+boot's own hook has compiled, and the engine ends the process some time after
+RestartApplicationParam returns - the start-up guard's call, before the
+libraries compile, ended its life right after the start-up's second DoCreate
+with DoProgress broken too (cos_261010_130720.log:7, :164-169). Every other
+restart waits for the tick as before: mods.ini alone changes no file the
+process loaded, and a marker still `booting` must be confirmed by the first
+main-menu frame first, or the next start would read it as a brick. Proven in
+the game by run g22 (2026-10-15; docs/plan.md S8 has what each life showed).
+
 The load order (decided 2026-09-28, plan S11)
 ---------------------------------------------
 The player's order, kept in <save>\quartermaster\order.cfg (ref/order.py
@@ -159,7 +179,8 @@ __all__ = ["STATE_REL", "KNOWN_REL", "STATE_KEYS", "KNOWN_KEYS", "FORMAT",
            "Marker", "BootPlan", "RestartPlan", "marker_values", "render_marker",
            "parse_marker", "damaged", "unstable_fp", "boot_plan", "restart_plan",
            "next_marker", "tick", "known_values", "render_known", "parse_known",
-           "update_known", "fresh", "acknowledge", "restart_due", "restart_now", "Life", "Apply",
+           "update_known", "fresh", "acknowledge", "restart_due", "restart_now",
+           "restart_at_boot", "Life", "Apply",
            "simulate", "auto_restarts"]
 
 STATE_REL = b"quartermaster\\state.cfg"
@@ -451,6 +472,14 @@ def restart_now(now_tenths, due, main_menu, sync):
     return b"wait"
 
 
+def restart_at_boot(rplan, marker, map_loaded=False):
+    """Whether the boot restarts at once instead of leaving it to the tick:
+    an automatic restart after this start rewrote its outputs (`marker` is
+    next_marker's, phase `written`), outside a map."""
+    return (rplan.restart and rplan.kind == AUTO and marker.phase == WRITTEN
+            and not map_loaded)
+
+
 # ------------------------------------------------------------ known.cfg
 def known_values(entries):
     """The Code values of known.cfg: the format line first, so the file
@@ -576,7 +605,8 @@ def simulate(lives, marker=None):
         rplan = restart_plan(marker, plan, life.fp, changed, life.mods, fp_known=life.known_fp)
         n = next_marker(marker, plan, rplan, life.fp, (marker.gen if marker else 0) + 1,
                         True, changed, marker.outs if marker else [])
-        if life.menu:
+        # A boot that restarts at once never reaches the tick.
+        if life.menu and not restart_at_boot(rplan, n):
             n = tick(n)
         if not rplan.restart and life.restart:
             n = n.copy()
