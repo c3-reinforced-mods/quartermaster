@@ -224,6 +224,11 @@ begin
    else
    qmBtLine('OK', 'Your load order is kept; Quartermaster moved itself to the end.'+qmBtWhat);
 end;
+//! With no saved order the declared rules were applied to mods.ini's order
+//! (qmOrder, qm_order moved, mv<j>, mvb<j>: row mv<j> was put after row mvb<j>).
+if (ParserGetIntValueByKeyByHandle(qmBtOrd, 'moved')>0) and (ParserSelectByKey('qm_about')<>0) then
+for qmBtK:=0 to ParserGetIntValueByKeyByHandle(qmBtOrd, 'moved')-1 do
+qmBtLine('OK', 'The load-order rules in about.cfg files were applied: '+ParserGetValueByKeyByHandle(ParserSelectByKey('qm_about'), 'tit'+IntToStr(ParserGetIntValueByKeyByHandle(qmBtOrd, 'mv'+IntToStr(qmBtK))))+' now loads after '+ParserGetValueByKeyByHandle(ParserSelectByKey('qm_about'), 'tit'+IntToStr(ParserGetIntValueByKeyByHandle(qmBtOrd, 'mvb'+IntToStr(qmBtK))))+'.');
 if (ParserGetValueByKeyByHandle(qmBtIni, 'action')='refused') or (ParserGetValueByKeyByHandle(qmBtIni, 'action')='failed') then
 qmBtLine('WARN', 'mods.ini was not changed ('+ParserGetValueByKeyByHandle(qmBtIni, 'why')+'): the game may load the mods in another order than Quartermaster''s load order.');
 if (ParserGetIntValueByKeyByHandle(qmBtOrd, 'unseen')>0) then
@@ -314,7 +319,7 @@ begin
          qmBtAt := qmBtAt+', ';
          qmBtAt := qmBtAt+ParserGetValueByKeyByHandle(qmBtAb, 'tit'+IntToStr(ParserGetIntValueByKeyByHandle(qmBtMods, 'cyc'+IntToStr(qmBtK))));
       end;
-      qmBtLine('FAIL', 'The load-order rules in about.cfg files form a cycle; placed by canonical order to break it: '+qmBtAt+'.');
+      qmBtLine('FAIL', 'The load-order rules in about.cfg files form a cycle, so none of them was applied (Auto-sort places the mods by canonical order to break it): '+qmBtAt+'.');
    end;
 end;
 //! Plan S10: the player's saved hotkeys replace every shipped hotkeys.cfg -

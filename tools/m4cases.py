@@ -378,7 +378,7 @@ def decisions_for(inp, entries, dropped=()):
     return out
 
 
-def run_generation(inp, decisions, compiles, mirror, deleted=None, seq0=0):
+def run_generation(inp, decisions, compiles, mirror, deleted=None, seq0=0, carried=()):
     """One generation into a sandbox whose data mirror is `mirror` ({path:
     bytes}, the files there now, the manifest under MF.MANIFEST_REL); the
     mirror is updated to what the generation leaves on disk."""
@@ -389,7 +389,7 @@ def run_generation(inp, decisions, compiles, mirror, deleted=None, seq0=0):
                    prev_manifest=mirror.get(MF.MANIFEST_REL),
                    deleted=deleted if deleted is not None else (lambda p: True),
                    classes=_Classes(classes), srcs=inp.srcs, fp=inp.fp, seq0=seq0,
-                   existing=mirror.get)
+                   existing=mirror.get, carried=carried)
     for s_ in g.stale:
         if s_.result == b"deleted":
             mirror.pop(s_.path, None)
@@ -523,8 +523,9 @@ def _plan_rows(rows, label_rows):
 
 
 def check_dump(out_dir, dump, case, game_dir=GAME, fixtures_dir=FIXTURES,
-               dist_mod=hbuild.DIST_MOD, out=print):
-    """Problems of one m4gen case's output, as a list of strings."""
+               dist_mod=hbuild.DIST_MOD, out=print, carried=()):
+    """Problems of one m4gen case's output, as a list of strings; `carried`:
+    the (carrier, carried) positions the game was told (qm_about car<i>)."""
     rows = _rows(dump)
     problems = []
     inp = inputs_from_dump(rows, game_dir, fixtures_dir, dist_mod)
@@ -573,7 +574,7 @@ def check_dump(out_dir, dump, case, game_dir=GAME, fixtures_dir=FIXTURES,
         seq0 = min(verdict) if verdict else 0
         decisions = _plan_rows(rows, [r for r in mine if r[0] == b"plan"])
         g = run_generation(inp, decisions, lambda c: verdict.get(c.seq, False),
-                           mirrors.setdefault(label, {}), lambda p: p in deleted, seq0=seq0)
+                           mirrors.setdefault(label, {}), lambda p: p in deleted, seq0=seq0, carried=carried)
         lines, rep, qmr = report_of(g, inp, dropped)
         problems += _compare_generation(label, k, mine, g, lines, rep, qmr)
         problems += _compare_files(m4, label, g, rep, qmr, k == _last_of(gens, label),

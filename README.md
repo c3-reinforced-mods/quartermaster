@@ -7,7 +7,7 @@ mod's change is gone, or the game stops at "Error compiling scripts". Quartermas
 fixes that inside the game. It is a tool, not a gameplay mod: on its own it changes
 nothing in battles, units or balance, and it needs no other mod.
 
-Version 0.1.7 (beta). Players get it from the game's Steam Workshop.
+Version 0.1.8 (beta). Players get it from the game's Steam Workshop.
 
 ## What it does
 
@@ -23,8 +23,9 @@ Version 0.1.7 (beta). Players get it from the game's Steam Workshop.
   a start still stops at "Error compiling scripts", the next start steps back towards
   the last set of mods that started and restarts the game.
 - **Keeps the player's load order:** mods load in the order mods.ini already has;
-  Quartermaster only puts itself last. The order can be changed in its window, or by
-  Auto-sort.
+  Quartermaster puts itself last and, until the player sets an order, moves a mod after
+  the mod its about.cfg says it must load after (nothing else moves). The order can be
+  changed in its window, or by Auto-sort.
 - **A mod manager in the game** (main menu, Mod Manager): switch mods on and off, move them
   in the load order, and see for every mod how it loads.
 - **Reports** what it did: `Documents\cossacks\quartermaster\report.txt` file by file, the

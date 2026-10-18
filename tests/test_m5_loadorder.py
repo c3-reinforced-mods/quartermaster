@@ -12,6 +12,7 @@ import random
 import pytest
 
 import test_m5_pascal as M5
+from ref import about as A
 from ref import boot as B
 from ref import fingerprint as FP
 from ref import inc as I
@@ -63,16 +64,18 @@ def rows_of(mods):
 
 
 # ------------------------------------------------------------- qmOrder
-def order_run(mods, saved=None, flags=None, order=None, sync=False):
+def order_run(mods, saved=None, flags=None, order=None, sync=False, abouts=None):
     """qmModList + qmOrder (+ qmModsIni) over `mods` = [(dir, enabled, tag)]
     in mods.ini order; `saved` = order.cfg's bytes (None: no file); `flags`
     = an Apply's [(dir, off)] (None: a boot); `order` = the Apply's dirs."""
     files = {INI: O.render_mods_ini(rows_of(mods)),
              QM + b"\\data\\quartermaster\\core.aix": b"x"}
+    for d, text in (abouts or {}).items():
+        files[d + b"\\about.cfg"] = text
     if saved is not None:
         files[ORDER] = saved
     eng = Engine(files, mods=mods)
-    M5.load(eng, "qmModList", "qmOrder", "qmModsIni")
+    M5.load(eng, "qmAbout", "qmModList", "qmOrder", "qmModsIni")
     kw = {}
     if flags is not None:
         kw = dict(runmode=b"apply", uiapplyn=len(flags))
@@ -85,12 +88,25 @@ def order_run(mods, saved=None, flags=None, order=None, sync=False):
             for k, d in enumerate(order):
                 kw["uiapplyord%d" % k] = d
     eng.set("qm_rt", sync=1 if sync else 0, **kw)
+    if abouts is not None:
+        M5.run(eng, "qmAbout")
     M5.run(eng, "qmModList")
     M5.run(eng, "qmOrder")
     return eng
 
 
-def twin(mods, saved=None, flags=None, order=None):
+def rules_of(mods, on, abouts):
+    """The twin's (edges, cyclic, Auto-sort's order) over `mods` with their
+    about.cfg files."""
+    self_row = max(i for i, (d, e, _t) in enumerate(mods) if e and d == QM)
+    rows = [A.Row(d, d.rsplit(b"\\", 1)[-1], A.parse(abouts.get(d)), bool(on[i]), i == self_row)
+            for i, (d, _e, _t) in enumerate(mods)]
+    canon = O.canonical_indices([d for d, _e, _t in mods], QM)
+    order, cycle = A.topo_order(canon, rows)
+    return A.edges(rows), bool(cycle), order
+
+
+def twin(mods, saved=None, flags=None, order=None, abouts=None):
     dirs = [d for d, _e, _t in mods]
     intent = None if flags is None else dict((O.norm_dir(d), off) for d, off in flags)
     on = [e for _d, e, _t in mods]
@@ -98,10 +114,11 @@ def twin(mods, saved=None, flags=None, order=None):
         on = [(not intent[O.norm_dir(d)]) if O.norm_dir(d) in intent and d != QM else e
               for d, e, _t in mods]
     have = O.parse_order(saved)
+    edges, cyclic, auto = rules_of(mods, on, abouts) if abouts is not None else (None, False, None)
     if flags is None:
-        lo = O.load_order(dirs, QM, have, on)
+        lo = O.load_order(dirs, QM, have, on, edges, cyclic, auto)
     else:
-        lo = O.apply_order(dirs, QM, have, order, on)
+        lo = O.apply_order(dirs, QM, have, order, on, edges, cyclic, auto)
     return lo, on, intent
 
 
@@ -109,15 +126,22 @@ def _keys(eng, parser, fmt, n):
     return [eng.key(parser, fmt % k) for k in range(n)]
 
 
-def check_order(mods, saved=None, flags=None, order=None, sync=False):
-    eng = order_run(mods, saved, flags, order, sync)
-    lo, on, intent = twin(mods, saved, flags, order)
+def check_order(mods, saved=None, flags=None, order=None, sync=False, abouts=None):
+    eng = order_run(mods, saved, flags, order, sync, abouts)
+    lo, on, intent = twin(mods, saved, flags, order, abouts)
     n = len(mods)
-    where = (mods, saved, flags, order, sync)
+    where = (mods, saved, flags, order, sync, abouts)
     assert [int(v) for v in _keys(eng, b"qm_mods", b"ord%d", n)] == lo.rows, where
+    mv = int(eng.key(b"qm_order", b"moved"))
+    assert [(int(eng.key(b"qm_order", b"mv%d" % k)), int(eng.key(b"qm_order", b"mvb%d" % k)))
+            for k in range(mv)] == lo.moved, where
     assert [int(eng.key(b"qm_mods", b"pos%d" % i)) for i in range(n)] == [
         lo.rows.index(i) for i in range(n)], where
     canon = O.canonical_indices([d for d, _e, _t in mods], QM)
+    if abouts is not None:
+        # Auto-sort's order follows the rules too (qmModList: canonical order v2).
+        canon = A.canonical_v2([d for d, _e, _t in mods], [A.parse(abouts.get(d)) for d, _e, _t in mods],
+                               max(i for i, (d, e, _t) in enumerate(mods) if e and d == QM)).order
     assert [int(v) for v in _keys(eng, b"qm_mods", b"cord%d", n)] == canon, where
     assert [int(eng.key(b"qm_mods", b"cpos%d" % i)) for i in range(n)] == [
         canon.index(i) for i in range(n)], where
@@ -584,3 +608,163 @@ def test_a_later_life_of_the_uiorder_step_says_done_with_the_saved_order():
     dump = eng.written[out + b"m5_uiorder_3.txt"]
     assert b"order|saved|0|0|" in dump and b"done|1\r\n" in dump
     assert any(l.startswith(b"[qm] m5 uiorder done") for l in eng.log)
+
+
+# ------------------------------------------- about.cfg rules in the default order
+CORE = b"mods\\UnofficialPatch"
+LAN = b"mods\\LANReinforced"
+RULES = {CORE: b"id = core\nloadAfter = lanreinforced\n", LAN: b"id = lanreinforced\n"}
+
+
+def test_core_after_lan_without_a_player_order_puts_lan_first():
+    """Reinforced - Core says loadAfter = lanreinforced; mods.ini has it first."""
+    mods = [(CORE, True, b"0"), (LAN, True, b"0"), (QM, True, b"0")]
+    eng, lo = check_order(mods, None, abouts=RULES)
+    assert [mods[i][0] for i in lo.rows] == [LAN, CORE, QM]
+    assert lo.src == b"ini" and lo.moved == [(0, 1)]
+    assert eng.key(b"qm_ini", b"action") == b"written"
+    assert eng.written[INI].index(LAN) < eng.written[INI].index(CORE)
+    # Already right: nothing moves, nothing is rewritten.
+    mods = [(LAN, True, b"0"), (CORE, True, b"0"), (QM, True, b"0")]
+    eng, lo = check_order(mods, None, abouts=RULES)
+    assert lo.rows == [0, 1, 2] and lo.moved == []
+    assert eng.key(b"qm_ini", b"action") == b"same"
+
+
+def test_only_the_mod_that_must_load_later_moves():
+    mods = [(CORE, True, b"0"), (WASD, True, b"0"), (CONF, True, b"0"), (LAN, True, b"0"),
+            (CAM, True, b"0"), (QM, True, b"0")]
+    _eng, lo = check_order(mods, None, abouts=RULES)
+    assert [mods[i][0] for i in lo.rows] == [WASD, CONF, LAN, CORE, CAM, QM]
+
+
+def test_mods_without_rules_do_not_move():
+    mods = [(CONF, True, b"0"), (WASD, True, b"0"), (CAM, True, b"0"), (QM, True, b"0")]
+    _eng, lo = check_order(mods, None, abouts={WASD: b"id = wasd\n"})
+    assert lo.rows == [0, 1, 2, 3] and lo.moved == []
+
+
+def test_a_rule_that_waits_for_a_disabled_mod_moves_nothing():
+    mods = [(CORE, True, b"0"), (LAN, False, b"0"), (QM, True, b"0")]
+    _eng, lo = check_order(mods, None, abouts=RULES)
+    assert lo.rows == [0, 1, 2] and lo.moved == []
+    # An Apply that switches LAN on puts the rule right in the same step.
+    eng, lo = check_order(mods, None, flags=[(LAN, False)], abouts=RULES)
+    assert [mods[i][0] for i in lo.rows] == [LAN, CORE, QM]
+
+
+def test_an_order_the_player_set_stays_as_it_is():
+    mods = [(CORE, True, b"0"), (LAN, True, b"0"), (QM, True, b"0")]
+    eng, lo = check_order(mods, O.render_order([CORE, LAN]), abouts=RULES)
+    assert lo.src == b"saved" and lo.rows == [0, 1, 2] and lo.moved == []
+    assert eng.key(b"qm_order", b"moved") == b"0"
+    # An Apply that asks for Core first keeps it, and saves it.
+    eng, lo = check_order(mods, None, flags=[], order=[CORE, LAN, QM], abouts=RULES)
+    assert lo.src == b"apply" and lo.rows == [0, 1, 2]
+    assert eng.key(b"qm_order", b"file") == b"written"
+
+
+def test_the_order_the_rules_give_through_an_apply_deletes_the_saved_one():
+    mods = [(CORE, True, b"0"), (LAN, True, b"0"), (QM, True, b"0")]
+    eng, lo = check_order(mods, O.render_order([CORE, LAN]), flags=[], order=[LAN, CORE, QM],
+                          abouts=RULES)
+    assert lo.src == b"apply" and eng.key(b"qm_order", b"file") == b"deleted"
+
+
+def test_a_cycle_of_rules_moves_nothing():
+    cyc = {CORE: b"id = core\nloadAfter = lanreinforced\n",
+           LAN: b"id = lanreinforced\nloadAfter = core\n"}
+    mods = [(CORE, True, b"0"), (LAN, True, b"0"), (QM, True, b"0")]
+    eng, lo = check_order(mods, None, abouts=cyc)
+    assert lo.rows == [0, 1, 2] and lo.moved == []
+    assert eng.key(b"qm_mods", b"cycn") != b"0"
+
+
+def test_a_moved_row_is_logged_with_both_dirs():
+    mods = [(CORE, True, b"0"), (LAN, True, b"0"), (QM, True, b"0")]
+    eng, _lo = check_order(mods, None, abouts=RULES)
+    assert (b"[qm] order: " + CORE + b" moved after " + LAN
+            + b" (about.cfg load-order rules)") in eng.log
+
+
+def test_chains_and_every_kind_of_rule_equal_the_twin_over_random_sets():
+    rng = random.Random(1018)
+    pool = [CORE, LAN, WASD, CONF, CAM, NEW, SWFP]
+    texts = [b"id = %s\n" % d.rsplit(b"\\", 1)[-1].lower() for d in pool]
+    names = [t[5:-1] for t in texts]
+    moved = 0
+    for _ in range(120):
+        dirs = rng.sample(pool, rng.randint(2, 7)) + [QM]
+        rng.shuffle(dirs)
+        abouts = {}
+        for d in dirs:
+            if d == QM:
+                continue
+            t = b"id = %s\n" % d.rsplit(b"\\", 1)[-1].lower()
+            for key in (b"loadAfter", b"loadBefore", b"requires", b"extends"):
+                if rng.random() < 0.25:
+                    t += key + b" = " + rng.choice(names) + b"\n"
+            abouts[d] = t
+        mods = [(d, d == QM or rng.random() < 0.8, b"0") for d in dirs]
+        saved = O.render_order(rng.sample(dirs, 2)) if rng.random() < 0.2 else None
+        flags = [(d, rng.random() < 0.3) for d in dirs] if rng.random() < 0.3 else None
+        _eng, lo = check_order(mods, saved, flags, None, abouts=abouts)
+        moved += len(lo.moved)
+    assert moved > 10
+
+
+@pytest.mark.parametrize("old, new", [
+    (b"if (qmOrHit>qmOrK) then", b"if (qmOrHit>qmOrK+1) then"),
+    (b"qmOrRow[qmOrM] := qmOrRi[qmOrK];", b"qmOrRow[qmOrM] := qmOrRi[qmOrRiN-1-qmOrK];"),
+    (b" and (ParserGetIntValueByKeyByHandle(qmOrMods, 'cycn')=0)", b""),
+    (b"qmOrRi[qmOrHit] := qmOrI;", b"qmOrRi[qmOrHit-1] := qmOrI;"),
+    (b"if (ParserGetIntValueByKeyByHandle(qmOrMods, 'on'+IntToStr(qmOrI))=1) then", b"if (qmOrI>=0) then"),
+])
+def test_a_wrong_rule_move_is_caught(old, new):
+    M5.PATCH["qmorder"] = (old, new)
+    try:
+        with pytest.raises(AssertionError):
+            test_core_after_lan_without_a_player_order_puts_lan_first()
+            test_only_the_mod_that_must_load_later_moves()
+            test_an_order_the_player_set_stays_as_it_is()
+            test_a_cycle_of_rules_moves_nothing()
+            test_a_rule_that_waits_for_a_disabled_mod_moves_nothing()
+    finally:
+        M5.PATCH.clear()
+
+
+def test_the_boot_says_which_mod_the_rules_put_after_which():
+    mods = [(CORE, True, b"0"), (LAN, True, b"0"), (QM, True, b"0")]
+    eng, _rt = M5.boot_engine(None, mods=mods)
+    eng.__class__ = Engine
+    eng.deleted = set()
+    for d, text in RULES.items():
+        eng.fs[d + b"\\about.cfg"] = text
+    M5.run(eng, "qmBoot")
+    lines = [eng.key(b"qm_boot", b"l%d" % k) for k in range(int(eng.key(b"qm_boot", b"n")))]
+    title = lambda d: eng.key(b"qm_about", b"tit%d" % [m[0] for m in mods].index(d))
+    assert (b"OK The load-order rules in about.cfg files were applied: " + title(CORE)
+            + b" now loads after " + title(LAN) + b".") in lines
+    rows, _p = O.parse_mods_ini(eng.written[INI])
+    assert [d for d, _dis in rows] == [LAN, CORE, QM]
+
+
+def test_a_rule_finds_the_enabled_copy_when_the_mod_is_registered_twice():
+    """Hands-on 2026-10-18 (hrun): Reinforced - LAN registered as its Workshop item
+    (switched off) and as a local folder (on); Core's loadAfter named both."""
+    sep = bytes([92])
+    lanw = W + b"3812736237"
+    lanl = b"mods" + sep + b"LANReinforced"
+    core = W + b"3817042325"
+    abouts = {core: b"id = reinforcedcore\nloadAfter = lanreinforced\n",
+              lanw: b"id = lanreinforced\n", lanl: b"id = lanreinforced\n"}
+    mods = [(lanw, False, b"3812736237"), (core, True, b"3817042325"),
+            (lanl, True, b"3812736237"), (QM, True, b"0")]
+    eng, lo = check_order(mods, None, abouts=abouts)
+    assert [mods[i][0] for i in lo.rows] == [lanw, lanl, core, QM]
+    assert lo.moved == [(1, 2)]
+    # With the copies the other way round the same rule holds.
+    mods = [(core, True, b"3817042325"), (lanw, True, b"3812736237"),
+            (lanl, False, b"3812736237"), (QM, True, b"0")]
+    _eng, lo = check_order(mods, None, abouts=abouts)
+    assert [mods[i][0] for i in lo.rows] == [lanw, core, lanl, QM]

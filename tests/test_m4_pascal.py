@@ -236,7 +236,7 @@ def _plant_boot(eng, st=V.FAIL, new=b"MODS\\QUARTERMASTER", clashes=()):
 
 
 def run_case(game_dir, fixture_dir, states, case_name, fixtures, tmp_path,
-             compiles=C.duplicate_var_oracle, undeletable=(), titles=None):
+             compiles=C.duplicate_var_oracle, undeletable=(), titles=None, extra=None):
     """qmSelfTest's part for one M4 case file, interpreted, after a boot that
     left its qm_boot block; the out folder is written to tmp_path. Returns
     (engine, dump bytes, status, out folder)."""
@@ -274,6 +274,8 @@ def run_case(game_dir, fixture_dir, states, case_name, fixtures, tmp_path,
     except P.Unsupported as exc:
         pytest.skip("the interpreter does not cover the emitted source: %s" % exc)
     _setup(eng, inp, entries, titles)
+    if extra is not None:
+        extra(eng, inp)
     _plant_boot(eng)
     eng.states["qmplan"].run()
     out = save + b"qm_test\\out\\"
@@ -788,3 +790,75 @@ def test_a_clash_shows_in_the_blocks_of_both_mods(game_dir, states):
     # The window's status keys stay as they were: its model marks a clash WARN
     # from qm_glob itself (qmUiModel, stsrc globals).
     assert (got[b"st0"], got[b"why0"]) == (before[b"st0"], before[b"why0"])
+
+
+def _carry(names_by_winner, taken):
+    """`extra` for run_case: qm_about car<row> = the rows the winner carries
+    (qmAbout's key); `taken` gets the (carrier, carried) positions for the twin."""
+    sep = bytes([92])
+
+    def extra(eng, inp):
+        row = dict((m.dir.rsplit(sep, 1)[-1], i) for i, m in enumerate(inp.mods))
+        about = eng.n_ParserCreate(b"qm_about")
+        for w, cs in names_by_winner.items():
+            eng.n_ParserSetValueByKeyByHandle(
+                about, b"car%d" % row[w], b"|" + b"".join(b"%d|" % row[c] for c in cs))
+            taken.update((inp.pos[row[w]], inp.pos[row[c]]) for c in cs)
+    return extra
+
+
+def _not_carried(eng, folder):
+    """The by-mod report says nothing of a carrier, and oncamera.inc still warns."""
+    rep = eng.nodes[eng.named[b"qm_report"]].keys
+    by_mod = [rep[b"m%d" % k] for k in range(int(rep[b"mlines"]))]
+    assert not any(b"carried" in l for l in by_mod)
+    assert any(l.startswith(b"  WARN gui") and b"oncamera.inc" in l for l in by_mod)
+
+
+def test_a_winner_that_carries_the_others_makes_the_files_ok(game_dir, fixture_dir, states,
+                                                            tmp_path):
+    """about.cfg `carries`: oncamera.inc has WASD (the winner) over Conflict and
+    M4Near. When WASD carries both, the lost conflict is no loss: the file is OK,
+    the by-mod report says who carries, and the game equals the twin."""
+    taken = set()
+    eng, dump, status, folder = run_case(
+        game_dir, fixture_dir, states, "qm_m4c.cfg", C.RUN_C, tmp_path,
+        extra=_carry({b"QMTestWASD": [b"QMTestConflict", b"QMTestM4Near"]}, taken))
+    assert status == b"ok" and len(taken) == 2
+    assert C.check_dump(folder, dump, C.cases(C.idx_entries())["qm_m4c.cfg"], game_dir,
+                        fixture_dir, out=lambda s: None, carried=taken) == []
+    report = open(os.path.join(folder, "m4", "x", "work", "report.txt"), "rb").read()
+    sep = bytes([92])
+    assert b"\r\nOK gui" + sep + b"menu.inc" + sep + b"oncamera.inc\r\n" in report
+    rep = eng.nodes[eng.named[b"qm_report"]].keys
+    by_mod = [rep[b"m%d" % k] for k in range(int(rep[b"mlines"]))]
+    assert [l for l in by_mod if l[:1] != b" " and l][-4:] == [
+        b"OK 1. mods" + sep + b"QMTestConflict", b"OK 2. mods" + sep + b"QMTestM4Near",
+        b"OK 3. mods" + sep + b"QMTestWASD", b"OK 4. mods" + sep + b"Quartermaster (Quartermaster)"]
+    assert sum(b"; carried: 3. " in l and l.endswith(b" holds the changes of the mods it carries")
+               for l in by_mod) == 3
+
+
+def test_a_winner_that_carries_only_one_of_two_stays_warn(game_dir, fixture_dir, states, tmp_path):
+    taken = set()
+    eng, dump, status, folder = run_case(
+        game_dir, fixture_dir, states, "qm_m4c.cfg", C.RUN_C, tmp_path,
+        extra=_carry({b"QMTestWASD": [b"QMTestConflict"]}, taken))
+    assert status == b"ok"
+    assert C.check_dump(folder, dump, C.cases(C.idx_entries())["qm_m4c.cfg"], game_dir,
+                        fixture_dir, out=lambda s: None, carried=taken) == []
+    _not_carried(eng, folder)
+
+
+def test_a_carrier_that_loads_before_the_carried_mod_stays_warn(game_dir, fixture_dir, states,
+                                                               tmp_path):
+    """Conflict loads first (position 1) and WASD wins: if Conflict, not WASD,
+    claims to carry WASD, nothing changes - the later mod's copy is what loads."""
+    taken = set()
+    eng, dump, status, folder = run_case(
+        game_dir, fixture_dir, states, "qm_m4c.cfg", C.RUN_C, tmp_path,
+        extra=_carry({b"QMTestConflict": [b"QMTestWASD"]}, taken))
+    assert status == b"ok"
+    assert C.check_dump(folder, dump, C.cases(C.idx_entries())["qm_m4c.cfg"], game_dir,
+                        fixture_dir, out=lambda s: None, carried=taken) == []
+    _not_carried(eng, folder)

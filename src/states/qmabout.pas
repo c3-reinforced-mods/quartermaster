@@ -59,9 +59,10 @@ var qmAbRn : Integer = 0;
 var qmAbRs : array [0..${rawsettings}-1] of String;
 var qmAbGroup : String = '';
 var qmAbGp : Integer;
-var qmAbV : array [0..6] of String;
-var qmAbL : array [0..6] of String;
+var qmAbV : array [0..7] of String;
+var qmAbL : array [0..7] of String;
 var qmAbPre : array [0..255] of String;
+var qmAbCar : array [0..255] of String;
 var qmAbNames : array [0..255] of String;
 var qmAbSelfRow : Integer = -1;
 var qmAbSelfDir : String = '';
@@ -539,6 +540,7 @@ begin
    if (qmAlK='incompatiblewith') then qmAlX := 4;
    if (qmAlK='compatiblewith') then qmAlX := 5;
    if (qmAlK='extradirs') then qmAlX := 6;
+   if (qmAlK='carries') then qmAlX := 7;
    if (qmAlX<0) then
    begin
       qmAbProb('WARN', 'unknown', 'line '+IntToStr(qmAbLn)+': unknown key '''+qmAlK+'''');
@@ -638,7 +640,8 @@ begin
    qmAbRn := 0;
    qmAbGroup := '';
    qmAbPre[qmAbI] := '|';
-   for qmAbK:=0 to 6 do
+   qmAbCar[qmAbI] := '|';
+   for qmAbK:=0 to 7 do
    begin
       qmAbV[qmAbK] := '';
       qmAbL[qmAbK] := '';
@@ -803,6 +806,7 @@ begin
       qmAbList('bef', 'loadbefore', 3);
       qmAbList('inc', 'incompatiblewith', 4);
       qmAbList('cmp', 'compatiblewith', 5);
+      qmAbList('crs', 'carries', 7);
       for qmAbK:=0 to qmAbRn-1 do
       begin
          qmAbGp := StrPos('|', qmAbRs[qmAbK]);
@@ -854,25 +858,38 @@ begin
 end;
 //! Load-order constraints (ref/about.py edges): requires, extends and
 //! loadAfter put the named row before this one, loadBefore this one before
-//! the named row; the first registered row with the name, never
-//! Quartermaster, never the row itself.
+//! the named row; every registered row with the name (a mod can be registered
+//! twice, its Workshop copy and a local folder), never Quartermaster, never
+//! the row itself.
 procedure qmAbPut(const qmAuName : String; const qmAuRow : Integer; const qmAuAfter : Boolean);
 begin
-   var qmAuJ : Integer;
-   var qmAuHit : Integer = -1;
-   for qmAuJ:=0 to qmAbN-1 do
-   if (qmAuHit<0) and (StrPos('|'+qmAuName+'|', qmAbNames[qmAuJ])>0) then
-   qmAuHit := qmAuJ;
-   if (qmAuHit<0) or (qmAuHit=qmAuRow) or (qmAuHit=qmAbSelfRow) then
-   exit;
-   if (qmAuAfter) then
+   var qmAuHit : Integer;
+   for qmAuHit:=0 to qmAbN-1 do
+   if (StrPos('|'+qmAuName+'|', qmAbNames[qmAuHit])>0) and (qmAuHit<>qmAuRow) and (qmAuHit<>qmAbSelfRow) then
    begin
-      if (StrPos('|'+IntToStr(qmAuHit)+'|', qmAbPre[qmAuRow])=0) then
-      qmAbPre[qmAuRow] := qmAbPre[qmAuRow]+IntToStr(qmAuHit)+'|';
-   end
-   else
-   if (StrPos('|'+IntToStr(qmAuRow)+'|', qmAbPre[qmAuHit])=0) then
-   qmAbPre[qmAuHit] := qmAbPre[qmAuHit]+IntToStr(qmAuRow)+'|';
+      if (qmAuAfter) then
+      begin
+         if (StrPos('|'+IntToStr(qmAuHit)+'|', qmAbPre[qmAuRow])=0) then
+         qmAbPre[qmAuRow] := qmAbPre[qmAuRow]+IntToStr(qmAuHit)+'|';
+      end
+      else
+      if (StrPos('|'+IntToStr(qmAuRow)+'|', qmAbPre[qmAuHit])=0) then
+      qmAbPre[qmAuHit] := qmAbPre[qmAuHit]+IntToStr(qmAuRow)+'|';
+   end;
+end;
+
+//! carries (ref/about.py carried): the carrier loads after the carried mod, as
+//! loadAfter says, and qm_about car<i> lists the rows row i carries (`|j|k|`).
+procedure qmAbCarry(const qmAvName : String; const qmAvRow : Integer);
+begin
+   var qmAvHit : Integer;
+   for qmAvHit:=0 to qmAbN-1 do
+   if (StrPos('|'+qmAvName+'|', qmAbNames[qmAvHit])>0) and (qmAvHit<>qmAvRow) and (qmAvHit<>qmAbSelfRow) then
+   begin
+      if (StrPos('|'+IntToStr(qmAvHit)+'|', qmAbCar[qmAvRow])=0) then
+      qmAbCar[qmAvRow] := qmAbCar[qmAvRow]+IntToStr(qmAvHit)+'|';
+   end;
+   qmAbPut(qmAvName, qmAvRow, True);
 end;
 
 for qmAbI:=0 to qmAbN-1 do
@@ -889,6 +906,12 @@ begin
       qmField(qmAbT, '|', qmAbK, qmAbU);
       qmAbPut(qmAbU, qmAbI, True);
    end;
+   qmAbT := ParserGetValueByKeyByHandle(qmAbP, 'crs'+qmAbSi);
+   for qmAbK:=1 to qmAbFields(qmAbT, '|')-2 do
+   begin
+      qmField(qmAbT, '|', qmAbK, qmAbU);
+      qmAbCarry(qmAbU, qmAbI);
+   end;
    qmAbT := ParserGetValueByKeyByHandle(qmAbP, 'bef'+qmAbSi);
    for qmAbK:=1 to qmAbFields(qmAbT, '|')-2 do
    begin
@@ -897,7 +920,10 @@ begin
    end;
 end;
 for qmAbI:=0 to qmAbN-1 do
-ParserSetValueByKeyByHandle(qmAbP, 'pre'+IntToStr(qmAbI), qmAbPre[qmAbI]);
+begin
+   ParserSetValueByKeyByHandle(qmAbP, 'pre'+IntToStr(qmAbI), qmAbPre[qmAbI]);
+   ParserSetValueByKeyByHandle(qmAbP, 'car'+IntToStr(qmAbI), qmAbCar[qmAbI]);
+end;
 ParserSetIntValueByKeyByHandle(qmAbP, 'n', qmAbN);
 ParserSetIntValueByKeyByHandle(qmAbP, 'self', qmAbSelfRow);
 ParserSetIntValueByKeyByHandle(qmAbP, 'files', qmAbFiles);
