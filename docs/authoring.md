@@ -68,11 +68,16 @@ a Workshop mod that has no about.cfg by its number. Quartermaster itself is
   Auto-sort gives: Workshop id / folder name, then these rules; Quartermaster
   always loads last. A cycle of rules is broken at the earliest mod another
   one waits for and reported as FAIL. Until the player sets an order,
-  Quartermaster keeps the one mods.ini has - what the game loads without it -
-  and moves only itself to the end (since 2026-09-30: the canonical order as
-  the default changed which mod wins whole files). A load order, set by hand
-  or mods.ini's, that breaks a rule is a WARN that names the mod to load
-  after the other.
+  Quartermaster starts from the one mods.ini has - what the game loads
+  without it - and, since 0.1.8, puts these rules right with the smallest
+  move: a mod that sits before a mod it must load after is moved to just
+  behind the last such mod, and nothing else moves (the full canonical order
+  as the default changed which mod wins whole files, 2026-09-30). Only rules
+  between two active mods count. Quartermaster goes last. Your mod needs no
+  Auto-sort press: `loadAfter = <id of the base>` is enough, and the order is
+  written to mods.ini and said in the report. A cycle of rules moves
+  nothing and is a FAIL. An order the player set by hand is kept as it is; one
+  that breaks a rule is a WARN that names the mod to load after the other.
 - **Activation.** In the manager window a mod cannot be activated when that
   breaks a rule: a mod it requires is not active (or its version is lower), a
   second total conversion (unless one `extends` the other), a second mod in

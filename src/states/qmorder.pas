@@ -18,7 +18,11 @@ requires: inchead
 //!     ModLibraryGetData's), Quartermaster moved last, and nothing is written.
 //!     It is the order the game loads without Quartermaster, so every whole
 //!     file two mods ship keeps its winner (since 2026-09-30: the canonical order here
-//!     bricked Cannons + State vs Country, which start without Quartermaster);
+//!     bricked Cannons + State vs Country, which start without Quartermaster).
+//!     Since 0.1.8 the about.cfg load-order rules (qm_about pre<i>) are put
+//!     right by the smallest move: a mod that sits before an enabled mod it must
+//!     load after goes to just behind the last such mod, nothing else moves; a
+//!     cycle of rules (qm_mods cycn) moves nothing. qm_order moved, mv<j>, mvb<j>;
 //!   - a saved order: its dirs that are still registered, in its order; then
 //!     the mods it does not place yet, in mods.ini's order; Quartermaster
 //!     last. The file is written back when that changed it; when none of its
@@ -96,6 +100,12 @@ var qmOrWhy : String = '';
 var qmOrFile : String = 'same';
 var qmOrSame : Boolean;
 var qmOrHit : Integer;
+var qmOrRi : array [0..255] of Integer;
+var qmOrRiN : Integer = 0;
+var qmOrMvA : array [0..4095] of Integer;
+var qmOrMvB : array [0..4095] of Integer;
+var qmOrMv : Integer = 0;
+var qmOrAb : Integer = ParserSelectByKey('qm_about');
 var qmOrOrd : Integer = ParserSelectByKey('qm_order');
 if (qmOrOrd=0) then
 qmOrOrd := ParserCreate('qm_order');
@@ -138,6 +148,43 @@ begin
    qmOrIsSelf[qmOrI] := 0;
    if (ParserGetValueByKeyByHandle(qmOrMods, 'org'+IntToStr(qmOrI))='s') then
    qmOrIsSelf[qmOrI] := 1;
+end;
+//! Rule 1's order (ref/order.py rule_moves): mods.ini's own, Quartermaster
+//! left out, with the about.cfg load-order rules (qm_about pre<i>: the rows
+//! that load before row i) put right by the smallest move. Walking from the
+//! front, a row that sits before an enabled mod it must load after moves to
+//! just behind the last such mod; nothing else moves, and the row is looked at
+//! again where it lands. A cycle (qm_mods cycn, qmModList) moves nothing.
+for qmOrI:=0 to qmOrN-1 do
+if (qmOrIsSelf[qmOrI]=0) then
+begin
+   qmOrRi[qmOrRiN] := qmOrI;
+   qmOrRiN := qmOrRiN+1;
+end;
+if (qmOrAb<>0) and (ParserGetIntValueByKeyByHandle(qmOrAb, 'n')=qmOrN) and (ParserGetIntValueByKeyByHandle(qmOrMods, 'cycn')=0) then
+begin
+   qmOrK := 0;
+   while (qmOrK<qmOrRiN) and (qmOrMv<4096) do
+   begin
+      qmOrI := qmOrRi[qmOrK];
+      qmOrT := ParserGetValueByKeyByHandle(qmOrAb, 'pre'+IntToStr(qmOrI));
+      qmOrHit := -1;
+      if (ParserGetIntValueByKeyByHandle(qmOrMods, 'on'+IntToStr(qmOrI))=1) then
+      for qmOrJ:=0 to qmOrRiN-1 do
+      if (ParserGetIntValueByKeyByHandle(qmOrMods, 'on'+IntToStr(qmOrRi[qmOrJ]))=1) and (StrPos('|'+IntToStr(qmOrRi[qmOrJ])+'|', qmOrT)>0) then
+      qmOrHit := qmOrJ;
+      if (qmOrHit>qmOrK) then
+      begin
+         qmOrMvA[qmOrMv] := qmOrI;
+         qmOrMvB[qmOrMv] := qmOrRi[qmOrHit];
+         qmOrMv := qmOrMv+1;
+         for qmOrJ:=qmOrK to qmOrHit-1 do
+         qmOrRi[qmOrJ] := qmOrRi[qmOrJ+1];
+         qmOrRi[qmOrHit] := qmOrI;
+      end
+      else
+      qmOrK := qmOrK+1;
+   end;
 end;
 //! The saved order: `;format|1`, then `;o|<dir>` per mod (the parser keeps
 //! the leading `;` of each value).
@@ -241,6 +288,21 @@ begin
 end;
 //! Then every mod not placed, in mods.ini's order (with no saved order: all
 //! of them, and nothing moves but Quartermaster), and Quartermaster last.
+if (qmOrSrcName='ini') then
+begin
+   for qmOrK:=0 to qmOrRiN-1 do
+   begin
+      qmOrRow[qmOrM] := qmOrRi[qmOrK];
+      qmOrM := qmOrM+1;
+   end;
+   for qmOrK:=0 to qmOrMv-1 do
+   begin
+      ParserSetIntValueByKeyByHandle(qmOrOrd, 'mv'+IntToStr(qmOrK), qmOrMvA[qmOrK]);
+      ParserSetIntValueByKeyByHandle(qmOrOrd, 'mvb'+IntToStr(qmOrK), qmOrMvB[qmOrK]);
+      qmLog('order: '+ParserGetValueByKeyByHandle(qmOrMods, 'dir'+IntToStr(qmOrMvA[qmOrK]))+' moved after '+ParserGetValueByKeyByHandle(qmOrMods, 'dir'+IntToStr(qmOrMvB[qmOrK]))+' (about.cfg load-order rules)');
+   end;
+end
+else
 for qmOrI:=0 to qmOrN-1 do
 if (qmOrTaken[qmOrI]=0) and (qmOrIsSelf[qmOrI]=0) then
 begin
@@ -310,10 +372,9 @@ begin
    //! mods.ini's order, Quartermaster last: what no saved order gives.
    var qmOrIsIni : Boolean = True;
    qmOrJ := 0;
-   for qmOrI:=0 to qmOrN-1 do
-   if (qmOrIsSelf[qmOrI]=0) then
+   for qmOrK:=0 to qmOrRiN-1 do
    begin
-      if (qmOrRow[qmOrJ]<>qmOrI) then
+      if (qmOrRow[qmOrJ]<>qmOrRi[qmOrK]) then
       qmOrIsIni := False;
       qmOrJ := qmOrJ+1;
    end;
@@ -371,6 +432,10 @@ ParserSetIntValueByKeyByHandle(qmOrOrd, 'canon', qmOrCanon);
 ParserSetIntValueByKeyByHandle(qmOrOrd, 'ext', qmOrExt);
 ParserSetIntValueByKeyByHandle(qmOrOrd, 'unseen', qmOrUnseen);
 ParserSetIntValueByKeyByHandle(qmOrOrd, 'dropped', qmOrDropped);
+if (qmOrSrcName='ini') then
+ParserSetIntValueByKeyByHandle(qmOrOrd, 'moved', qmOrMv)
+else
+ParserSetIntValueByKeyByHandle(qmOrOrd, 'moved', 0);
 ParserSetValueByKeyByHandle(qmOrOrd, 'file', qmOrFile);
 ParserSetValueByKeyByHandle(qmOrOrd, 'why', qmOrWhy);
 qmLog('order: src='+qmOrSrcName+' canon='+IntToStr(qmOrCanon)+' ext='+IntToStr(qmOrExt)+' unseen='+IntToStr(qmOrUnseen)+' dropped='+IntToStr(qmOrDropped)+' order.cfg='+qmOrFile);

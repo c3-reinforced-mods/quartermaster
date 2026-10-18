@@ -9,7 +9,9 @@ order, at the end of this module). The canonical order stayed the default until
 2026-09-30: as a default it changed which mod wins every whole file two
 mods ship, and a set that starts without Quartermaster stopped at "Error
 compiling scripts" with it (Cannons + State vs Country). The default is now the
-order mods.ini has; the canonical order below is what Auto-sort gives. The same
+order mods.ini has with the about.cfg rules put right by the smallest move
+(0.1.8, so that a mod that must load after its base does without an Auto-sort
+press); the canonical order below is what Auto-sort gives. The same
 order on every machine in MP is the players' responsibility, as it is without
 Quartermaster, and the report says so when it is not the canonical one.
 
@@ -371,8 +373,12 @@ always gives the same bytes.
 Rules (`load_order`, `apply_order`)
 -----------------------------------
 1. No saved order (no order.cfg, or a file without `;format|1`): every mod in
-   the order mods.ini lists it (ModLibraryGetData's order), Quartermaster
-   moved last, and a boot writes nothing. That is the order the game loads
+   the order mods.ini lists it (ModLibraryGetData's order), the about.cfg
+   load-order rules put right (since 0.1.8, 2026-10-18: `rule_moves`, the
+   smallest move - a mod that sits before one it must load after goes to just
+   behind the last such mod, nothing else moves; only rules between two
+   enabled mods count; a cycle of rules moves nothing), Quartermaster moved
+   last, and a boot writes no order.cfg. That is the order the game loads
    without Quartermaster, so every whole file two mods ship has the same
    winner with it. Until 2026-09-30 this rule gave the canonical order, so
    that every machine with the same mods had the same order however they were
@@ -449,12 +455,15 @@ class LoadOrder(object):
     save     what order.cfg must hold now: a list of dirs, None for "no
              file" (rule 1), or False for "leave the file as it is"
     why      an Apply's order that was not used: b"count" or b"dirs"
+    moved    [(row, the row it was put after)]: what rule 1 moved to keep the
+             about.cfg load-order rules (empty with a saved order)
     """
 
-    __slots__ = ("rows", "src", "unseen", "dropped", "ext", "canon", "save", "why")
+    __slots__ = ("rows", "src", "unseen", "dropped", "ext", "canon", "save", "why", "moved")
 
     def __init__(self):
         self.rows, self.src, self.unseen, self.dropped = [], b"ini", [], []
+        self.moved = []
         self.ext, self.canon, self.save, self.why = False, True, False, b""
 
     def __repr__(self):
@@ -467,10 +476,49 @@ def _self_rows(dirs, self_dir):
                if self_dir is not None and norm_dir(d) == norm_dir(self_dir))
 
 
-def _ini_rows(dirs, selfs):
-    """Rule 1's order: mods.ini's own, Quartermaster's rows moved last."""
-    return ([i for i in range(len(dirs)) if i not in selfs]
-            + [i for i in range(len(dirs)) if i in selfs])
+#: Most moves `rule_moves` makes; a set of rules without a cycle needs far fewer.
+MOVE_LIMIT = 4096
+
+
+def rule_moves(rows, edges, on):
+    """Rule 1's about.cfg step: `rows` (row indices, mods.ini's order, no
+    Quartermaster) with every violated rule put right by the smallest move.
+
+    `edges` = [(before, after)] (ref.about.edges: requires, extends, loadAfter,
+    loadBefore); a rule counts when both mods are on (`on[i]`). Walking from the
+    front, a row that sits before a mod it must load after moves to just
+    behind the last such mod; nothing else moves. A row passed over is looked at
+    again where it lands, since a move can put a row before one that waits for
+    it. Returns `(rows, moved)`, `moved` = [(row, the row it was put after)] in
+    move order. The rules must not form a cycle (the caller checks); at
+    MOVE_LIMIT moves it stops where it is."""
+    rows, moved = list(rows), []
+    k = 0
+    while k < len(rows) and len(moved) < MOVE_LIMIT:
+        a = rows[k]
+        last = -1
+        for b, x in edges:
+            if x == a and b in rows and on[a] and on[b]:
+                last = max(last, rows.index(b))
+        if last > k:
+            behind = rows[last]
+            rows.pop(k)
+            rows.insert(last, a)
+            moved.append((a, behind))
+        else:
+            k += 1
+    return rows, moved
+
+
+def _ini_rows(dirs, selfs, edges=None, on=None, moved=None):
+    """Rule 1's order: mods.ini's own with the declared rules put right
+    (`rule_moves`; `moved` collects what moved), Quartermaster's rows last."""
+    rows = [i for i in range(len(dirs)) if i not in selfs]
+    if edges:
+        rows, mv = rule_moves(rows, edges, on if on is not None else [True] * len(dirs))
+        if moved is not None:
+            moved.extend(mv)
+    return rows + [i for i in range(len(dirs)) if i in selfs]
 
 
 def _place(dirs, wanted, skip):
@@ -488,44 +536,51 @@ def _place(dirs, wanted, skip):
     return taken, missing
 
 
-def _finish(lo, dirs, self_dir, enabled):
-    canon = canonical_indices(dirs, self_dir)
+def _finish(lo, dirs, self_dir, enabled, autosort=None):
+    canon = autosort if autosort is not None else canonical_indices(dirs, self_dir)
     on = enabled if enabled is not None else [True] * len(dirs)
     lo.canon = [i for i in lo.rows if on[i]] == [i for i in canon if on[i]]
     return lo
 
 
-def load_order(dirs, self_dir=None, saved=None, enabled=None):
+def load_order(dirs, self_dir=None, saved=None, enabled=None, edges=None, cyclic=False,
+               autosort=None):
     """The load order of a boot (rules 1 and 3). `dirs`: the registered mods
     as ModLibraryGetData lists them (mods.ini order); `saved`: parse_order of
-    order.cfg; `enabled`: their flags for the next start (for `canon`),
-    default all on."""
+    order.cfg; `enabled`: their flags for the next start (for `canon` and for
+    which rules count), default all on; `edges`: ref.about.edges, the
+    about.cfg load-order rules between registered rows, `cyclic`: they form a
+    cycle (then rule 1 moves nothing); `autosort`: Auto-sort's order (rows;
+    ref.about.canonical_v2), default the plain canonical one."""
     lo = LoadOrder()
     selfs = _self_rows(dirs, self_dir)
     ini = _ini_rows(dirs, selfs)
+    rules = None if cyclic else edges
     if saved is None:
-        lo.rows = ini
-        return _finish(lo, dirs, self_dir, enabled)
+        lo.rows = _ini_rows(dirs, selfs, rules, enabled, lo.moved)
+        return _finish(lo, dirs, self_dir, enabled, autosort)
     taken, lo.dropped = _place(dirs, saved, selfs)
     if not taken:
         # Every mod the player placed is gone: nothing of the manual order
         # is left, so rule 1 again, and the file goes.
-        lo.rows, lo.save = ini, None
-        return _finish(lo, dirs, self_dir, enabled)
+        lo.rows, lo.save = _ini_rows(dirs, selfs, rules, enabled, lo.moved), None
+        return _finish(lo, dirs, self_dir, enabled, autosort)
+    # The player's order stands as it is: the rules only warn.
     lo.src = b"saved"
     lo.unseen = [i for i in ini if i not in taken and i not in selfs]
     lo.rows = taken + lo.unseen + [i for i in ini if i in selfs]
     lo.ext = sorted(taken) != taken
     now = [dirs[i] for i in lo.rows if i not in selfs]
     lo.save = now if now != list(saved) else False
-    return _finish(lo, dirs, self_dir, enabled)
+    return _finish(lo, dirs, self_dir, enabled, autosort)
 
 
-def apply_order(dirs, self_dir=None, saved=None, wanted=None, enabled=None):
+def apply_order(dirs, self_dir=None, saved=None, wanted=None, enabled=None, edges=None,
+                cyclic=False, autosort=None):
     """The load order of an Apply (rule 2): `wanted` = the window's order as
     dirs (qm_rt uiapplyord<k>), None when the Apply did not change the order
     (then the boot's `load_order`; `ext` is not asked in an Apply)."""
-    base = load_order(dirs, self_dir, saved, enabled)
+    base = load_order(dirs, self_dir, saved, enabled, edges, cyclic, autosort)
     base.ext = False
     if wanted is None:
         return base
@@ -537,7 +592,7 @@ def apply_order(dirs, self_dir=None, saved=None, wanted=None, enabled=None):
         base.why = b"dirs"
         return base
     selfs = _self_rows(dirs, self_dir)
-    ini = _ini_rows(dirs, selfs)
+    ini = _ini_rows(dirs, selfs, None if cyclic else edges, enabled)
     lo = LoadOrder()
     lo.src = b"apply"
     lo.rows = [i for i in taken if i not in selfs] + [i for i in ini if i in selfs]
@@ -546,7 +601,7 @@ def apply_order(dirs, self_dir=None, saved=None, wanted=None, enabled=None):
         lo.save = None if saved is not None else False
     else:
         lo.save = now if saved is None or now != list(saved) else False
-    return _finish(lo, dirs, self_dir, enabled)
+    return _finish(lo, dirs, self_dir, enabled, autosort)
 
 
 def load_rows(ini_rows, self_dir, order, intent=None):

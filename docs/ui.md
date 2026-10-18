@@ -117,8 +117,13 @@ active rows; inactive rows keep their slots (qmUiOrder, whose rules and twin
 are in `ref/order.py`). Apply carries the order to `qm_rt uiapplyord<k>` and
 the boot's qmOrder makes it the saved load order (`<save>\quartermaster\order.cfg`;
 an order equal to mods.ini's own deletes that file again). Without a saved
-order the load order is the one mods.ini has, Quartermaster last: what
-the game loads without Quartermaster. Auto-sort gives the canonical order.
+order the load order is the one mods.ini has, Quartermaster last - what
+the game loads without Quartermaster - with the about.cfg load-order rules
+(`requires`, `extends`, `loadAfter`, `loadBefore`) put right since 0.1.8: a
+mod that sits before a mod it must load after moves to just behind it, nothing
+else moves (qmOrder, twin `rule_moves` in `ref/order.py`); a cycle of rules
+moves nothing. Once the player has set an order it is kept as it is, a broken
+rule only a WARN. Auto-sort gives the canonical order.
 
 **Drag was tried and dropped** (2026-09-28). The engine has no
 list drag-and-drop call (its `GUIListBox*` exports insert, delete and select items
@@ -314,7 +319,7 @@ the game's version text `ver`, `MainMenu.col1.row1.wnewgame.ver`
 Patch keep it at that path), and changes no text the menu made. `qmTick`
 looks `ver` up on every main-menu frame while the manager's screens are
 ready, and when its frame has no `qmver` (the menu made the frame again) runs
-`EventQmManager` with `verline` = 1. That puts "Quartermaster 0.1.7" in the
+`EventQmManager` with `verline` = 1. That puts "Quartermaster 0.1.8" in the
 window's head colour `FFDFAF` one line above the stack of texts the menu
 keeps there: `ver`, then each visible text of the frame whose y lies less
 than two heights above the stack's top (New Terrain Mod's own version, a line
@@ -461,14 +466,17 @@ the boot lays the same marks over the loaded report when it does not generate.
   order** the running game uses and the next start will use - the saved
   manual order, mods it has not seen after the saved ones and before
   Quartermaster in mods.ini's order, removed ones dropped, Quartermaster last;
-  with no saved order mods.ini's own order, Quartermaster last - and
+  with no saved order mods.ini's own order with the about.cfg rules put right
+  (0.1.8), Quartermaster last - and
   `pos<i>` for a row's place in it; `cord<k>` / `cpos<i>` keep the canonical
   order (the window copies `cord<k>` for Auto-sort).
 - `qm_index` (qmIndexBegin / qmIndexStep): `n`, `p<k>` (path), `v<k>`
   (providers as `;`-joined load positions, `-` for none) for the files a mod
   provides. Only enabled mods are scanned.
 - `qm_order` (the boot, not read by the window yet): `src` (ini - no saved
-  order, mods.ini's own; saved; apply), `canon` (1 = the enabled mods' load
+  order, mods.ini's own with the rules put right; saved; apply), `moved` +
+  `mv<j>` / `mvb<j>` (rows the rules moved: row mv<j> was put after row
+  mvb<j>; 0 unless src is ini), `canon` (1 = the enabled mods' load
   order is their canonical order), `ext` (1 = mods.ini was reordered outside
   and put back), `unseen` + `u<j>`, `dropped` + `d<j>`, `file`, `why`. The
   report's Boot block says when the load order is not the canonical one (an
