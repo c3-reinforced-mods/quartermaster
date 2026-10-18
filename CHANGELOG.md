@@ -12,17 +12,19 @@
   get the warning, as before.
 - If the rules of two mods contradict each other, nothing is moved and the report shows
   the error.
-- A new line in a mod's about.cfg, `carries = <id>`, for a mod that already contains the
-  changes of another mod (Reinforced - Core carries Reinforced - LAN). When that mod loads
-  after the one it carries, the two no longer show a warning for the files they share: the
-  report says "carried" instead. The conflicts are still listed in conflicts.txt. If the
-  order is the other way round, the warning stays. An older Quartermaster ignores the line
-  and shows one note about an unknown key.
+- Mod authors get a new line for the mod's about.cfg file: `carries = <id of the other mod>`.
+  It is for a mod that already contains another mod's changes (for example a combined
+  build). When that mod loads after the one it carries, the two no longer show a warning for
+  the files they share: the report says "carried" instead, and conflicts.txt still lists
+  the conflicts. If the order is the other way round, the warning stays. An older
+  Quartermaster ignores the line and shows one note about an unknown key.
 
 Workshop change note:
 
-> 0.1.8: mods that must load after another mod (about.cfg: loadAfter, requires, extends,
-> loadBefore) are now put in the right place automatically; no Auto-sort needed. Only that
-> one mod moves. An order you set yourself stays as it is. New about.cfg line `carries`:
-> a mod that contains another mod's changes (e.g. Reinforced - Core and LAN) no longer
-> shows warnings for the files they share, as long as it loads after that mod.
+> 0.1.8: a mod that has to load after another mod (its author says so in the mod's
+> about.cfg file) is now put in the right place by itself, the first time the game starts;
+> you no longer need to press Auto-sort. Only that one mod moves, all other mods stay where
+> they were. A list you arranged by hand stays as it is. For mod authors: a new about.cfg
+> line, `carries`, for a mod that already contains another mod's changes (for example a
+> combined build); such a mod no longer shows warnings for the files they share, as long as
+> it loads after the mod it carries.
