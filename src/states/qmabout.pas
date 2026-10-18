@@ -858,40 +858,37 @@ begin
 end;
 //! Load-order constraints (ref/about.py edges): requires, extends and
 //! loadAfter put the named row before this one, loadBefore this one before
-//! the named row; the first registered row with the name, never
-//! Quartermaster, never the row itself.
+//! the named row; every registered row with the name (a mod can be registered
+//! twice, its Workshop copy and a local folder), never Quartermaster, never
+//! the row itself.
 procedure qmAbPut(const qmAuName : String; const qmAuRow : Integer; const qmAuAfter : Boolean);
 begin
-   var qmAuJ : Integer;
-   var qmAuHit : Integer = -1;
-   for qmAuJ:=0 to qmAbN-1 do
-   if (qmAuHit<0) and (StrPos('|'+qmAuName+'|', qmAbNames[qmAuJ])>0) then
-   qmAuHit := qmAuJ;
-   if (qmAuHit<0) or (qmAuHit=qmAuRow) or (qmAuHit=qmAbSelfRow) then
-   exit;
-   if (qmAuAfter) then
+   var qmAuHit : Integer;
+   for qmAuHit:=0 to qmAbN-1 do
+   if (StrPos('|'+qmAuName+'|', qmAbNames[qmAuHit])>0) and (qmAuHit<>qmAuRow) and (qmAuHit<>qmAbSelfRow) then
    begin
-      if (StrPos('|'+IntToStr(qmAuHit)+'|', qmAbPre[qmAuRow])=0) then
-      qmAbPre[qmAuRow] := qmAbPre[qmAuRow]+IntToStr(qmAuHit)+'|';
-   end
-   else
-   if (StrPos('|'+IntToStr(qmAuRow)+'|', qmAbPre[qmAuHit])=0) then
-   qmAbPre[qmAuHit] := qmAbPre[qmAuHit]+IntToStr(qmAuRow)+'|';
+      if (qmAuAfter) then
+      begin
+         if (StrPos('|'+IntToStr(qmAuHit)+'|', qmAbPre[qmAuRow])=0) then
+         qmAbPre[qmAuRow] := qmAbPre[qmAuRow]+IntToStr(qmAuHit)+'|';
+      end
+      else
+      if (StrPos('|'+IntToStr(qmAuRow)+'|', qmAbPre[qmAuHit])=0) then
+      qmAbPre[qmAuHit] := qmAbPre[qmAuHit]+IntToStr(qmAuRow)+'|';
+   end;
 end;
 
 //! carries (ref/about.py carried): the carrier loads after the carried mod, as
 //! loadAfter says, and qm_about car<i> lists the rows row i carries (`|j|k|`).
 procedure qmAbCarry(const qmAvName : String; const qmAvRow : Integer);
 begin
-   var qmAvJ : Integer;
-   var qmAvHit : Integer = -1;
-   for qmAvJ:=0 to qmAbN-1 do
-   if (qmAvHit<0) and (StrPos('|'+qmAvName+'|', qmAbNames[qmAvJ])>0) then
-   qmAvHit := qmAvJ;
-   if (qmAvHit<0) or (qmAvHit=qmAvRow) or (qmAvHit=qmAbSelfRow) then
-   exit;
-   if (StrPos('|'+IntToStr(qmAvHit)+'|', qmAbCar[qmAvRow])=0) then
-   qmAbCar[qmAvRow] := qmAbCar[qmAvRow]+IntToStr(qmAvHit)+'|';
+   var qmAvHit : Integer;
+   for qmAvHit:=0 to qmAbN-1 do
+   if (StrPos('|'+qmAvName+'|', qmAbNames[qmAvHit])>0) and (qmAvHit<>qmAvRow) and (qmAvHit<>qmAbSelfRow) then
+   begin
+      if (StrPos('|'+IntToStr(qmAvHit)+'|', qmAbCar[qmAvRow])=0) then
+      qmAbCar[qmAvRow] := qmAbCar[qmAvRow]+IntToStr(qmAvHit)+'|';
+   end;
    qmAbPut(qmAvName, qmAvRow, True);
 end;
 

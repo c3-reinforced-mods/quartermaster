@@ -747,3 +747,24 @@ def test_the_boot_says_which_mod_the_rules_put_after_which():
             + b" now loads after " + title(LAN) + b".") in lines
     rows, _p = O.parse_mods_ini(eng.written[INI])
     assert [d for d, _dis in rows] == [LAN, CORE, QM]
+
+
+def test_a_rule_finds_the_enabled_copy_when_the_mod_is_registered_twice():
+    """Hands-on 2026-10-18 (hrun): Reinforced - LAN registered as its Workshop item
+    (switched off) and as a local folder (on); Core's loadAfter named both."""
+    sep = bytes([92])
+    lanw = W + b"3812736237"
+    lanl = b"mods" + sep + b"LANReinforced"
+    core = W + b"3817042325"
+    abouts = {core: b"id = reinforcedcore\nloadAfter = lanreinforced\n",
+              lanw: b"id = lanreinforced\n", lanl: b"id = lanreinforced\n"}
+    mods = [(lanw, False, b"3812736237"), (core, True, b"3817042325"),
+            (lanl, True, b"3812736237"), (QM, True, b"0")]
+    eng, lo = check_order(mods, None, abouts=abouts)
+    assert [mods[i][0] for i in lo.rows] == [lanw, lanl, core, QM]
+    assert lo.moved == [(1, 2)]
+    # With the copies the other way round the same rule holds.
+    mods = [(core, True, b"3817042325"), (lanw, True, b"3812736237"),
+            (lanl, False, b"3812736237"), (QM, True, b"0")]
+    _eng, lo = check_order(mods, None, abouts=abouts)
+    assert [mods[i][0] for i in lo.rows] == [lanw, core, lanl, QM]

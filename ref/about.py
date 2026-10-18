@@ -589,6 +589,13 @@ def _find(rows, name, active_only):
     return -1
 
 
+def _find_all(rows, name):
+    """Every registered row that answers to `name` (a mod can be registered
+    twice - its Workshop copy and a local folder, one of them switched off -
+    and a load-order rule is about whichever of them is active)."""
+    return [j for j, r in enumerate(rows) if name in r.names]
+
+
 def _related(rows, a, b):
     """`a` extends `b` or `b` extends `a` (an add-on and its base)."""
     ea, eb = rows[a].about.extends, rows[b].about.extends
@@ -686,29 +693,29 @@ def edges(rows):
         before = ([rid for rid, _v in a.requires] + ([a.extends] if a.extends else [])
                   + a.loadafter + a.carries)
         for name in before:
-            j = _find(rows, name, False)
-            if j >= 0 and j != i and not rows[j].is_self and (j, i) not in out:
-                out.append((j, i))
+            for j in _find_all(rows, name):
+                if j != i and not rows[j].is_self and (j, i) not in out:
+                    out.append((j, i))
         for name in a.loadbefore:
-            j = _find(rows, name, False)
-            if j >= 0 and j != i and not rows[j].is_self and (i, j) not in out:
-                out.append((i, j))
+            for j in _find_all(rows, name):
+                if j != i and not rows[j].is_self and (i, j) not in out:
+                    out.append((i, j))
     return out
 
 
 def carried(rows):
     """`(carrier, carried)` row pairs: `carries = <id>` in the carrier's
     about.cfg says its files hold that mod's changes for the files both ship
-    (docs/authoring.md). The first registered row with the name, never
-    Quartermaster, never the row itself - the way `edges` finds it."""
+    (docs/authoring.md). Every registered row with the name, never
+    Quartermaster, never the row itself - the way `edges` finds them."""
     out = []
     for i, r in enumerate(rows):
         if r.is_self:
             continue
         for name in r.about.carries:
-            j = _find(rows, name, False)
-            if j >= 0 and j != i and not rows[j].is_self and (i, j) not in out:
-                out.append((i, j))
+            for j in _find_all(rows, name):
+                if j != i and not rows[j].is_self and (i, j) not in out:
+                    out.append((i, j))
     return out
 
 
