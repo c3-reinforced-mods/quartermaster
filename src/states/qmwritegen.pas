@@ -138,6 +138,13 @@ var qmGnChanged : Integer = 0;
 var qmGnWta : Integer = 0;
 var qmGnSalt : String = '';
 var qmGnFailed : Integer = 0;
+var qmGnAb : Integer = ParserSelectByKey('qm_about');
+var qmGcI : Integer;
+var qmGcOk : Boolean;
+var qmGcWin : String;
+var qmGcWr : Integer;
+var qmGcT : String;
+var qmGcP : String;
 var qmGnRemoved : Integer = 0;
 var qmGnSn : Integer = 0;
 var qmGnL : Integer = 0;
@@ -1064,6 +1071,38 @@ begin
    if (qmWrManifest(qmGnPool, 0, qmGnL, qmGnHk)=0) then
    qmLog('gen: the manifest could not be written');
    ParserSetValueByKeyByHandle(qmGnG, 'status', 'ok');
+end;
+//! A WARN that is no loss (ref/validate.py _carried_by): every mod but the
+//! winner is one the winner `carries =` (qm_about car<row>), so the winner's
+//! copy holds what a whole-file choice, a lost conflict or a merge that gave
+//! up leaves out. The file is OK, c<m> = 1, cw<m> the winner's position.
+if (qmGnAb<>0) then
+for qmGnM:=0 to qmGnN-1 do
+begin
+   qmGnS := ParserGetValueByKeyByHandle(qmGnG, 's'+IntToStr(qmGnM));
+   qmGcT := ParserGetValueByKeyByHandle(qmGnG, 'x'+IntToStr(qmGnM));
+   if (qmGnS='WARN') and ((qmGcT='winner') or (qmGcT='merged') or (qmGcT='gaveup') or (qmGcT='hooked')) then
+   begin
+      qmGcWin := ParserGetValueByKeyByHandle(qmGnG, 'pw'+IntToStr(qmGnM));
+      qmGcP := ParserGetValueByKeyByHandle(qmGnG, 'pp'+IntToStr(qmGnM));
+      qmGcWr := ParserGetIntValueByKeyByHandle(qmGnMods, 'ord'+qmGcWin);
+      qmGcOk := (StrPos(';', qmGcP)>0);
+      qmGcI := 0;
+      qmField(qmGcP, ';', 0, qmGnT);
+      while (qmGnT<>'') do
+      begin
+         if (qmGnT<>qmGcWin) and (StrPos('|'+IntToStr(ParserGetIntValueByKeyByHandle(qmGnMods, 'ord'+qmGnT))+'|', ParserGetValueByKeyByHandle(qmGnAb, 'car'+IntToStr(qmGcWr)))=0) then
+         qmGcOk := False;
+         qmGcI := qmGcI+1;
+         qmField(qmGcP, ';', qmGcI, qmGnT);
+      end;
+      if (qmGcOk) then
+      begin
+         ParserSetValueByKeyByHandle(qmGnG, 's'+IntToStr(qmGnM), 'OK');
+         ParserSetValueByKeyByHandle(qmGnG, 'cw'+IntToStr(qmGnM), qmGcWin);
+         qmLog('gen carried '+ParserGetValueByKeyByHandle(qmGnPlan, 'path'+IntToStr(qmGnM))+': the winner at '+qmGcWin+' carries the other mods');
+      end;
+   end;
 end;
 for qmGnM:=0 to qmGnN-1 do
 begin

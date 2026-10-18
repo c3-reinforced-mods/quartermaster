@@ -39,7 +39,7 @@ from ref import textio as T
 
 __all__ = ["FILE_NAME", "TYPES", "SLOTS", "SETTING_TYPES", "MAX_SETTINGS", "Setting",
            "About", "parse", "parse_lines", "version_tuple", "cmp_version", "names",
-           "Problem", "Row", "rules", "edges", "topo_order", "draft", "unescape_text",
+           "Problem", "Row", "rules", "edges", "carried", "topo_order", "draft", "unescape_text",
            "canonical_v2", "Plan", "fixed_text", "parse_setting", "RuleProblem",
            "KNOWN_DIR", "WORKSHOP_PREFIX", "known_name", "ROWS_A_PAGE", "option_rows",
            "STRIP_ROWS", "GENERAL", "ALL_SETTINGS", "option_groups", "option_strip",
@@ -77,7 +77,7 @@ ROWS_A_PAGE = 10        # rows of the Options view
 
 SCALAR = (b"id", b"name", b"version", b"quartermaster", b"gamebuild", b"type", b"extends")
 LISTS = (b"exclusive", b"requires", b"loadafter", b"loadbefore", b"incompatiblewith",
-         b"compatiblewith", b"extradirs")
+         b"compatiblewith", b"extradirs", b"carries")
 REPEATED = (b"setting",)
 GROUP = b"group"
 
@@ -307,6 +307,7 @@ class About(object):
         self.requires = []          # [(id, version or b"")]
         self.loadafter = []
         self.loadbefore = []
+        self.carries = []
         self.incompatiblewith = []
         self.compatiblewith = []
         self.extradirs = []
@@ -419,7 +420,7 @@ def parse_lines(lines):
                                           b"requires '%s' is not id or id>=version" % item))
             else:
                 a.requires.append((rid, ver))
-    for key in (b"loadafter", b"loadbefore", b"incompatiblewith", b"compatiblewith"):
+    for key in (b"loadafter", b"loadbefore", b"carries", b"incompatiblewith", b"compatiblewith"):
         out = getattr(a, key.decode())
         for value in raw[key]:
             for item in _items(value):
@@ -682,12 +683,29 @@ def edges(rows):
         if r.is_self:
             continue
         a = r.about
-        before = [rid for rid, _v in a.requires] + ([a.extends] if a.extends else []) + a.loadafter
+        before = ([rid for rid, _v in a.requires] + ([a.extends] if a.extends else [])
+                  + a.loadafter + a.carries)
         for name in before:
             j = _find(rows, name, False)
             if j >= 0 and j != i and not rows[j].is_self and (j, i) not in out:
                 out.append((j, i))
         for name in a.loadbefore:
+            j = _find(rows, name, False)
+            if j >= 0 and j != i and not rows[j].is_self and (i, j) not in out:
+                out.append((i, j))
+    return out
+
+
+def carried(rows):
+    """`(carrier, carried)` row pairs: `carries = <id>` in the carrier's
+    about.cfg says its files hold that mod's changes for the files both ship
+    (docs/authoring.md). The first registered row with the name, never
+    Quartermaster, never the row itself - the way `edges` finds it."""
+    out = []
+    for i, r in enumerate(rows):
+        if r.is_self:
+            continue
+        for name in r.about.carries:
             j = _find(rows, name, False)
             if j >= 0 and j != i and not rows[j].is_self and (i, j) not in out:
                 out.append((i, j))

@@ -341,3 +341,26 @@ def test_canonical_order_v2_equals_the_twin():
     mods = [(d, True, b"") for d in dirs] + [(QM, True, b"")]
     got, cyc, plan = order_case(mods, ORDER_FILES)
     assert len(cyc) == 1 and got == plan.order
+
+
+# ------------------------------------------------------------ carries
+SEP = bytes([92])
+
+
+def test_carries_is_a_known_list_key_that_also_orders():
+    core, lan, other = b"mods" + SEP + b"Core", b"mods" + SEP + b"LAN", b"mods" + SEP + b"Other"
+    files = {core: b"id = core\ncarries = lanreinforced; nobody; Core\nCarries = lanreinforced\n",
+             lan: b"id = lanreinforced\n", other: b"id = other\ncarries = 1.2 3\n"}
+    mods = [(core, True, b""), (lan, True, b""), (other, True, b""), (QM, True, b"")]
+    eng = engine(mods, files)
+    a = A.parse(files[core])
+    assert a.carries == [b"lanreinforced", b"nobody", b"core"] and not a.problems
+    assert [p.text for p in A.parse(files[other]).problems] == [b"carries '1.2 3' is not a mod id; ignored"]
+    rows = [A.Row(d, d.rsplit(SEP, 1)[-1], A.parse(files.get(d)), True, d == QM) for d, _o, _t in mods]
+    assert A.carried(rows) == [(0, 1)]
+    assert (1, 0) in A.edges(rows)
+    assert eng.key(b"qm_about", b"car0") == b"|1|"
+    assert eng.key(b"qm_about", b"pre0") == b"|1|"
+    assert [eng.key(b"qm_about", b"car%d" % i) for i in (1, 2, 3)] == [b"|"] * 3
+    assert eng.key(b"qm_about", b"pn0") == b"0"
+    assert eng.key(b"qm_about", b"pn2") == b"1"

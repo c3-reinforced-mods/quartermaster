@@ -47,12 +47,15 @@ except the list keys and `setting`, whose values add up.
 | `extends` | the id of the mod this one is an add-on to | FAIL |
 | `requires` | ids, each optionally `>=version` | FAIL |
 | `loadAfter`, `loadBefore` | ids | WARN, ignored |
+| `carries` | ids of the mods whose changes this mod's own files already contain (since 0.1.8) | WARN, ignored |
 | `incompatibleWith`, `compatibleWith` | ids | WARN, ignored |
 | `extraDirs` | folders (read, not used yet) | - |
 | `setting` | a setting (below), repeatable, at most 1000 (32 until 0.1.5) | WARN, dropped |
 | `group` | a title for the settings after it (below; since 0.1.6) | WARN, ignored |
 
-Any other key is a WARN. A FAIL marks the mod FAIL in the window and in the
+Any other key is a WARN (so an older Quartermaster, which does not know
+`carries`, shows one WARN line for it in the report and ignores the key; nothing
+else changes). A FAIL marks the mod FAIL in the window and in the
 report.
 
 **Ids.** A mod answers to its declared `id` and also to its folder: the
@@ -78,6 +81,20 @@ a Workshop mod that has no about.cfg by its number. Quartermaster itself is
   written to mods.ini and said in the report. A cycle of rules moves
   nothing and is a FAIL. An order the player set by hand is kept as it is; one
   that breaks a rule is a WARN that names the mod to load after the other.
+- **Carried changes (`carries`, since 0.1.8).** A mod that builds the changes of
+  another mod into its own copies of the files both change (a combined build)
+  says so: `carries = <id of that mod>`. It also counts as `loadAfter` for that
+  mod. For a file that both ship, when the carrier is the last one that ships
+  it and every other mod that ships it is carried by it, what that mod's copy
+  does not take over (a whole file the carrier wins, a conflict its changes
+  lose, a merge that gave up) is no loss: the file is OK for all the mods in
+  it, the by-mod report adds `carried: <carrier> holds the changes of the mods
+  it carries`, and conflicts.txt and the window's pair lines still list the
+  conflict. If the carried mod loads after the carrier, nothing is carried: the
+  later mod's copy wins and the usual WARN stays (and the order rule above puts
+  the carrier last by itself, or warns when you set the order). A file where
+  some other mod ships it too, or one the merge had to leave a mod out of
+  (`partial`), keeps its WARN.
 - **Activation.** In the manager window a mod cannot be activated when that
   breaks a rule: a mod it requires is not active (or its version is lower), a
   second total conversion (unless one `extends` the other), a second mod in

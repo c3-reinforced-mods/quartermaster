@@ -414,7 +414,16 @@ def mod_why(files, pos=None):
 
 
 def mod_how(r, pos, dirs):
-    """What became of file `r` for the mod at `pos`, in the report by mod."""
+    """What became of file `r` for the mod at `pos`, in the report by mod. A
+    file whose winner carries the others' changes (about.cfg `carries`, status
+    OK for it) says so."""
+    how = _mod_how(r, pos, dirs)
+    if r.carried is not None:
+        how += b"; carried: " + _who(r.carried, dirs) + b" holds the changes of the mods it carries"
+    return how
+
+
+def _mod_how(r, pos, dirs):
     d = r.decision
     if d.action == b"skip":
         return b"used as it is; no other mod ships it"

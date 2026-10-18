@@ -59,9 +59,10 @@ var qmAbRn : Integer = 0;
 var qmAbRs : array [0..${rawsettings}-1] of String;
 var qmAbGroup : String = '';
 var qmAbGp : Integer;
-var qmAbV : array [0..6] of String;
-var qmAbL : array [0..6] of String;
+var qmAbV : array [0..7] of String;
+var qmAbL : array [0..7] of String;
 var qmAbPre : array [0..255] of String;
+var qmAbCar : array [0..255] of String;
 var qmAbNames : array [0..255] of String;
 var qmAbSelfRow : Integer = -1;
 var qmAbSelfDir : String = '';
@@ -539,6 +540,7 @@ begin
    if (qmAlK='incompatiblewith') then qmAlX := 4;
    if (qmAlK='compatiblewith') then qmAlX := 5;
    if (qmAlK='extradirs') then qmAlX := 6;
+   if (qmAlK='carries') then qmAlX := 7;
    if (qmAlX<0) then
    begin
       qmAbProb('WARN', 'unknown', 'line '+IntToStr(qmAbLn)+': unknown key '''+qmAlK+'''');
@@ -638,7 +640,8 @@ begin
    qmAbRn := 0;
    qmAbGroup := '';
    qmAbPre[qmAbI] := '|';
-   for qmAbK:=0 to 6 do
+   qmAbCar[qmAbI] := '|';
+   for qmAbK:=0 to 7 do
    begin
       qmAbV[qmAbK] := '';
       qmAbL[qmAbK] := '';
@@ -803,6 +806,7 @@ begin
       qmAbList('bef', 'loadbefore', 3);
       qmAbList('inc', 'incompatiblewith', 4);
       qmAbList('cmp', 'compatiblewith', 5);
+      qmAbList('crs', 'carries', 7);
       for qmAbK:=0 to qmAbRn-1 do
       begin
          qmAbGp := StrPos('|', qmAbRs[qmAbK]);
@@ -875,6 +879,22 @@ begin
    qmAbPre[qmAuHit] := qmAbPre[qmAuHit]+IntToStr(qmAuRow)+'|';
 end;
 
+//! carries (ref/about.py carried): the carrier loads after the carried mod, as
+//! loadAfter says, and qm_about car<i> lists the rows row i carries (`|j|k|`).
+procedure qmAbCarry(const qmAvName : String; const qmAvRow : Integer);
+begin
+   var qmAvJ : Integer;
+   var qmAvHit : Integer = -1;
+   for qmAvJ:=0 to qmAbN-1 do
+   if (qmAvHit<0) and (StrPos('|'+qmAvName+'|', qmAbNames[qmAvJ])>0) then
+   qmAvHit := qmAvJ;
+   if (qmAvHit<0) or (qmAvHit=qmAvRow) or (qmAvHit=qmAbSelfRow) then
+   exit;
+   if (StrPos('|'+IntToStr(qmAvHit)+'|', qmAbCar[qmAvRow])=0) then
+   qmAbCar[qmAvRow] := qmAbCar[qmAvRow]+IntToStr(qmAvHit)+'|';
+   qmAbPut(qmAvName, qmAvRow, True);
+end;
+
 for qmAbI:=0 to qmAbN-1 do
 if (qmAbI<>qmAbSelfRow) and (ParserGetIntValueByKeyByHandle(qmAbP, 'has'+IntToStr(qmAbI))=1) then
 begin
@@ -889,6 +909,12 @@ begin
       qmField(qmAbT, '|', qmAbK, qmAbU);
       qmAbPut(qmAbU, qmAbI, True);
    end;
+   qmAbT := ParserGetValueByKeyByHandle(qmAbP, 'crs'+qmAbSi);
+   for qmAbK:=1 to qmAbFields(qmAbT, '|')-2 do
+   begin
+      qmField(qmAbT, '|', qmAbK, qmAbU);
+      qmAbCarry(qmAbU, qmAbI);
+   end;
    qmAbT := ParserGetValueByKeyByHandle(qmAbP, 'bef'+qmAbSi);
    for qmAbK:=1 to qmAbFields(qmAbT, '|')-2 do
    begin
@@ -897,7 +923,10 @@ begin
    end;
 end;
 for qmAbI:=0 to qmAbN-1 do
-ParserSetValueByKeyByHandle(qmAbP, 'pre'+IntToStr(qmAbI), qmAbPre[qmAbI]);
+begin
+   ParserSetValueByKeyByHandle(qmAbP, 'pre'+IntToStr(qmAbI), qmAbPre[qmAbI]);
+   ParserSetValueByKeyByHandle(qmAbP, 'car'+IntToStr(qmAbI), qmAbCar[qmAbI]);
+end;
 ParserSetIntValueByKeyByHandle(qmAbP, 'n', qmAbN);
 ParserSetIntValueByKeyByHandle(qmAbP, 'self', qmAbSelfRow);
 ParserSetIntValueByKeyByHandle(qmAbP, 'files', qmAbFiles);

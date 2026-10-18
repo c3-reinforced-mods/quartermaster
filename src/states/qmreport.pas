@@ -373,6 +373,12 @@ begin
       if (qmQoOut='') then
       qmQoOut := ParserGetValueByKeyByHandle(qmReG, 'x'+qmQoM);
    end;
+   //! The winner carries the others' changes (qmGenerate cw<m>; ref/report.py mod_how).
+   if (ParserGetValueByKeyByHandle(qmReG, 'cw'+qmQoM)<>'') then
+   begin
+      qmReWho(ParserGetValueByKeyByHandle(qmReG, 'cw'+qmQoM), qmQoWho);
+      qmQoOut := qmQoOut+'; carried: '+qmQoWho+' holds the changes of the mods it carries';
+   end;
 end;
 
 //! The conflicts and near edits of merged plan file qmQmM that involve the

@@ -275,6 +275,7 @@ class PathResult(object):
         self.chosen = None
         self.code = b""
         self.status = OK
+        self.carried = None        # the winner's position when it carries the others' changes (WARN -> OK)
         self.written = b"-"
         self.first_line = 0        # vanilla's first Code value, 1-based file line
         self.vanilla_n = 0
@@ -352,7 +353,7 @@ def _merge_job(vanilla, parts):
 def generate(decisions, self_pos, read_vanilla, read_mod, hook_file, compiles,
              prev_manifest=None, deleted=lambda path: True, classes=None,
              srcs=None, fp=b"-", seq0=0, existing=lambda path: None, wta=False,
-             gensalt=b""):
+             gensalt=b"", carried=()):
     """One generation, as qmGenerate runs it. Returns a `Generation`.
 
     decisions      ref.planner.Decision list, plan order, providers as canonical
@@ -374,6 +375,8 @@ def generate(decisions, self_pos, read_vanilla, read_mod, hook_file, compiles,
                    get no output, hook paths try winner+hook, vanilla+hook
     gensalt        appended to the generation constant (the boot's unstable-
                    fingerprint test, I5)
+    carried        {(carrier, carried)} canonical positions (ref.about
+                   `carried` over the load order): see `_carried_ok`
     """
     from . import manifest as MF
     g = Generation()
@@ -416,6 +419,10 @@ def generate(decisions, self_pos, read_vanilla, read_mod, hook_file, compiles,
         _decide(g, r, read_vanilla, read_mod, hook_file, compiles, wta, gensalt)
         if r.code == b"fatal":
             g.fatal = r.path
+    for r in g.paths:
+        win = _carried_by(r, self_pos, carried)
+        if win is not None:
+            r.status, r.carried = OK, win
     g.outhash = MF.outputs_hash([(r.path, r.chosen.htok) for r in g.paths if r.chosen])
 
     if g.fatal is not None:
@@ -534,6 +541,21 @@ def _hooked(values, hook):
     insert_at_hook); the index is taken on the bytes the values stand for."""
     k = I.hook_index([unescape(v) for v in values])
     return list(values[:k]) + list(hook) + list(values[k:])
+
+
+def _carried_by(r, self_pos, carried):
+    """The winner's position when file `r`'s WARN is no loss, else None. Every mod but the winner (the last one that
+    ships it) is one the winner `carries = ` (ref.about `carried`): the winner's
+    copy holds their changes, so what a whole-file choice, a lost conflict or
+    a merge that gave up leaves out is in it already. Only when the winner
+    loads after them: that is the order the pairs are listed in. A mod left
+    out of a subset (`partial`) stays WARN."""
+    if r.status != WARN or r.code not in (b"winner", b"merged", b"gaveup", b"hooked"):
+        return None
+    who = [p for p in r.decision.providers if p != self_pos]
+    if len(who) >= 2 and all((who[-1], p) in carried for p in who[:-1]):
+        return who[-1]
+    return None
 
 
 def _merge_status(code, mg, alone=False):
