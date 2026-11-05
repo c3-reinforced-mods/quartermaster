@@ -312,8 +312,6 @@ label.pl = camera_left;Kamera w lewo
 - A language you give no row for shows the English text. A row for a setting or
   group the file does not declare, a row without its text, and an unknown language code
   are WARNs in the report and change nothing. The last row for the same thing counts.
-- In Chinese, Japanese and Korean only `label` rows are used for now (names and
-  group titles stand in lists that cannot draw those characters yet).
 - Setting ids and stored values do not depend on the language. The options of a
   `choice` setting are their own stored values and are not translated.
 - Say `quartermaster = 0.1.9` if the translations matter to you; an older

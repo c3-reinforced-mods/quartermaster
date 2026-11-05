@@ -327,8 +327,6 @@ begin
    end;
    if (qmLlCode<>qmLcLang) then
    exit;
-   if (StrPos(','+qmLlCode+',', ',zh,ja,ko,')>0) and (qmLlBase<>'label') then
-   exit;
    qmLcConv(qmLlText, qmLlDone);
    if (qmLlDone='') then
    begin

@@ -38,13 +38,21 @@ The language of the game is the folder name in `GetLocaleTableFileName`
   changes the key, so a translation of the old text is missing - and the build
   says so - rather than wrong. Two texts that make one key stop the build.
   The English stays in the code and is shipped as `en.cfg` too.
-- **A text a list or a button draws** is written `qmTL('English text')`. Core's
-  wide-text path does not reach a list box, a combo box or `SetGUIElementText`
-  called by a script of ours, so in `zh`, `ja` and `ko` such a text reads English
-  (the file holds `l_<key>` for it: the translation in the other languages,
-  English in those three). Until Core draws them, or Quartermaster does, that is
-  what the Installed and Active lists, the groups list of Options and the
-  main-menu button read in those languages.
+- **Chinese, Japanese and Korean in lists and buttons.** Core's wide-text path
+  draws a text that goes through `_gui_CreateText` and the other wrappers of
+  `lib/gui.script`. A call a script of ours makes on the engine itself it does not
+  reach, so Quartermaster does that work with the same rules (src/lib/qmwide.pas):
+  `qmListAdd` puts a text with escapes into a list as a wide item (the list in wide
+  mode, the wide font of its bitmap font `w<z|j|k>_<font>`, the cells of a row set
+  apart to the columns), `qmSetText` sets a button's own text the same way, and
+  `qmRect`, `qmRectF`, `qmWrap`, `qmHead` measure, wrap and cut by characters. In
+  any other language, and for any text without an escape, each of them is the
+  engine's call. All of it is ported from Core's `src/gui_wide.pas` and proved only
+  on the emulated engine.
+- **The one text kept English: the main-menu button.** Its caption is read back to
+  see whether the menu drew it again, and a wide text reads back empty, so it is
+  written `qmTL('Mod Manager')`: the key `l_...` holds the translation in the other
+  languages and English in zh, ja and ko.
 - **Sources:** `src/text/<code>.cfg`, UTF-8, `key = value`, one line each, sorted
   by key. `src/text/en.cfg` is written from the code by
   `python tools/qmtext.py --write` and the build refuses to run when it is not what the
@@ -112,9 +120,6 @@ label.de = camera_left;Kamera links
 - The setting ids, the stored values and `settings.cfg` never change with the
   language, so a player who changes the language keeps every value. The search
   box of Options looks in the label that is shown.
-- **In Chinese, Japanese and Korean only `label.<code>` is applied.** A name and a
-  group's title stand in lists, which the wide-text path does not reach yet (see
-  `qmTL` above), so they stay as declared there. The rows are still checked.
 - Not translated: the options of a `choice` setting (their text is also their stored
   value); a `choice.<code>` row is an unknown key for now. A `host` setting's
   suffix and the texts of `requires` problems are Quartermaster's.
@@ -129,7 +134,7 @@ label.de = camera_left;Kamera links
 - The pictures of the window in the game in each language, and the fit of every
   text to its button and line: only a run in the game shows it (the owner's yes, no
   other test and no game running).
-- CJK in lists and in the main-menu button (see `qmTL`).
+- Chinese, Japanese and Korean in the lists and buttons: ported from Core, never drawn in the game; the main-menu button stays English there.
 - The options of a `choice` setting.
 - `report.txt` and `conflicts.txt` in the player's language, if wanted: it needs
   the twin to take the language, and the byte-for-byte tests to run in English.

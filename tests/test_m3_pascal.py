@@ -983,7 +983,8 @@ class Engine(object):
         return b"%d" % v
 
     def n_StrToInt(self, s):
-        return int(s)
+        # the engine reads $ and hex digits (Core's wide-text code relies on it)
+        return int(s[1:], 16) if s.startswith(b"$") else int(s)
 
     def n_StrLength(self, s):
         return len(s)

@@ -77,8 +77,8 @@ def test_the_rows_of_the_language_replace_the_name_the_group_and_the_label():
 
 def test_chinese_is_ascii_with_escapes_and_a_backslash_is_u005c():
     a = A.parse(ABOUT, b"zh")
-    # a name and a group's title stand in lists, which a wide language cannot draw: as declared
-    assert T.unescape(a.name) == b"WASD camera" and T.unescape(a.settings[0].group) == b"Camera keys"
+    assert T.unescape(a.name) == b"WASD \\u76F8\\u673A"
+    assert T.unescape(a.settings[0].group) == b"\\u76F8\\u673A\\u6309\\u952E"
     assert T.unescape(a.settings[0].label) == b"\\u5411\\u5DE6\\u79FB\\u52A8 \\u005C \\u6309\\u952E"
 
 

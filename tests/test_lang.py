@@ -193,14 +193,15 @@ def test_a_state_that_has_a_text_loads_the_language_first():
     assert b"qmT(" not in code
 
 
-def test_a_text_a_list_draws_reads_english_in_a_language_drawn_from_wide_fonts():
+def test_the_menu_button_reads_english_in_a_language_drawn_from_wide_fonts():
     files = dict(hbuild.load_texts(hbuild.SRC))
     de = files[lang.TEXT_DIR + "de.cfg"]
     zh = files[lang.TEXT_DIR + "zh.cfg"].decode("ascii")
-    assert b"   l_general = Allgemein\r\n" in de and b"   t_general = Allgemein\r\n" in de
-    assert "   l_general = General\r\n" in zh and "   t_general = \\u5E38\\u89C4\r\n" in zh
-    # the caption of the main menu's button is such a text too: English in zh, ja and ko
-    assert "   l_mod_manager = Mod Manager\r\n" in zh
+    # its caption is read back to see whether the menu drew it again, and a wide text reads back empty
+    assert b"   l_mod_manager = Mod Manager\r\n" not in de and b"   l_mod_manager = " in de
+    assert "   l_mod_manager = Mod Manager\r\n" in zh and "   t_mod_manager = " in zh
+    # a text a list draws is the language's own in every language, the wide ones included
+    assert "   t_general = \\u5E38\\u89C4\r\n" in zh and "l_general" not in zh
 
 
 def test_the_list_form_of_the_macro_looks_up_the_list_key():

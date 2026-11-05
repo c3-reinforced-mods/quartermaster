@@ -434,10 +434,10 @@ begin
       qmSmVc := ParserGetValueByKeyByHandle(qmSmUi, 'vc'+IntToStr(qmSmVk));
       // How a game file is treated, in the list.
       if (qmSmVc='merge') then
-      qmSmVc := qmTL('merged with other mods')
+      qmSmVc := qmT('merged with other mods')
       else
-      qmSmVc := qmTL('not merged - the last mod''s copy is used');
-      GUIListBoxAddItem(qmSmVl, #9+ParserGetValueByKeyByHandle(qmSmUi, 'v'+IntToStr(qmSmVk))+#9+qmSmVc, qmSmVk);
+      qmSmVc := qmT('not merged - the last mod''s copy is used');
+      qmListAdd(qmSmVl, #9+ParserGetValueByKeyByHandle(qmSmUi, 'v'+IntToStr(qmSmVk))+#9+qmSmVc, qmSmVk);
       if (qmSmVk=qmSmVs) then
       SetGUIListBoxItemIndexSilent(qmSmVl, qmSmVk);
    end;
@@ -635,12 +635,12 @@ begin
             qmSmOgt := ParserGetValueByKeyByHandle(qmSmUi, 'ogt'+IntToStr(qmSmOk));
             // The name of the settings that stand under no group.
             if (qmSmOgt='') then
-            qmSmOgt := qmTL('General');
+            qmSmOgt := qmT('General');
             qmSmFit(qmSmOgt+' ('+IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'ogc'+IntToStr(qmSmOk)))+')', 290, gc_font_serif_12, qmSmOlb);
-            GUIListBoxAddItem(qmSmOcb, qmSmOlb, qmSmOk);
+            qmListAdd(qmSmOcb, qmSmOlb, qmSmOk);
          end;
-         qmSmText := qmTL('All settings (%1)', IntToStr(qmSmOn));
-         GUIListBoxAddItem(qmSmOcb, qmSmText, qmSmOgn);
+         qmSmText := qmT('All settings (%1)', IntToStr(qmSmOn));
+         qmListAdd(qmSmOcb, qmSmText, qmSmOgn);
          //! A search goes over every group, so while one is on the list
          //! says All settings; the group comes back with the emptied box
          //! (seen in the game, run g21v3 of 2026-10-13: "General (2)" over
@@ -744,7 +744,7 @@ begin
          // default colour again (showinternetshell.inc:821).
          // The name column is 180 wide (the third tab above).
          qmSmFit(qmSmName, 172, gc_font_serif_12, qmSmShort);
-         GUIListBoxAddItem(qmSmInst, #9+qmSmMark+gc_font_color_default+#9+qmSmShort+#9+ParserGetValueByKeyByHandle(qmSmUi, 'org'+qmSmS)+#9+qmSmSt+gc_font_color_default, qmSmI);
+         qmListAdd(qmSmInst, #9+qmSmMark+gc_font_color_default+#9+qmSmShort+#9+ParserGetValueByKeyByHandle(qmSmUi, 'org'+qmSmS)+#9+qmSmSt+gc_font_color_default, qmSmI);
          if (qmSmI=qmSmSel) and (qmSmSide=0) then
          SetGUIListBoxItemIndexSilent(qmSmInst, qmSmRow);
          qmSmRow := qmSmRow+1;
@@ -815,7 +815,7 @@ begin
          qmSmSt := gc_font_color_lightgrey+qmSmSt;
          // The name column is 230 wide (the fourth tab above).
          qmSmFit(qmSmName, 222, gc_font_serif_12, qmSmShort);
-         GUIListBoxAddItem(qmSmAct, #9+IntToStr(qmSmRow+1)+#9+qmSmMark+gc_font_color_default+#9+qmSmShort+#9+qmSmSt+gc_font_color_default, qmSmI);
+         qmListAdd(qmSmAct, #9+IntToStr(qmSmRow+1)+#9+qmSmMark+gc_font_color_default+#9+qmSmShort+#9+qmSmSt+gc_font_color_default, qmSmI);
          if (qmSmI=qmSmSel) and (qmSmSide=1) then
          begin
             SetGUIListBoxItemIndexSilent(qmSmAct, qmSmRow);

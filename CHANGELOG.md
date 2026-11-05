@@ -3,7 +3,7 @@
 ## 0.1.9 (2026-11-05)
 
 - Quartermaster speaks your language: the manager window, its messages and the button it puts in the main menu follow the language of the game. English, Czech, German, Spanish, French, Italian, Polish, Portuguese, Russian, Turkish and Ukrainian, and with Reinforced - Core also Hungarian, Dutch, Chinese, Japanese and Korean. A text without a translation reads English.
-- Not translated: the report (`report.txt`, `conflicts.txt`) and the game log. In Chinese, Japanese and Korean the lists and the menu button still read English.
+- Not translated: the report (`report.txt`, `conflicts.txt`) and the game log. In Chinese, Japanese and Korean the menu button still reads English.
 - For mod authors: `name.<code>`, `group.<code>` and `label.<code>` in about.cfg give your mod's name, group titles and setting labels in other languages (UTF-8). A language you give no row for shows your English text. An older Quartermaster shows a warning for each row and the English texts.
 
 Workshop change note:

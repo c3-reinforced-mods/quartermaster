@@ -531,10 +531,6 @@ def localise(a, lang):
             continue
         if code != lang:
             continue
-        if _lang.ENCODING[code.decode("ascii")] == "escaped" and base != b"label":
-            # a name and a group's title stand in lists, which the wide-text
-            # path does not reach: they stay as declared in these languages
-            continue
         done = l10n_text(text, code)
         if done is None:
             a.problems.append(Problem(b"WARN", b"l10n-chars",

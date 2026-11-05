@@ -1,4 +1,4 @@
-helpers:
+helpers: qmtext
 requires:
 ---
 //! Measuring, wrapping and cutting a text that holds characters written as a
@@ -94,11 +94,62 @@ begin
    end;
 end;
 
+//! The language of the game: -1 when it is drawn from bitmap fonts, 0 Chinese,
+//! 1 Japanese, 2 Korean (Core's _upatch_WideLang).
+function qmWideKind : Integer;
+begin
+   var qmWkLang : String;
+   qmLang(qmWkLang);
+   Result := -1;
+   if (qmWkLang='zh') then Result := 0;
+   if (qmWkLang='ja') then Result := 1;
+   if (qmWkLang='ko') then Result := 2;
+end;
+
+//! The bitmap font a name stands for (a wide name w?_ or w?2_ loses its prefix).
+procedure qmBitmapFont(const qmBfName : String; var qmBfPlain : String);
+begin
+   qmBfPlain := qmBfName;
+   if (StrLength(qmBfName)>3) and (SubStr(qmBfName, 1, 1)='w') then
+   begin
+      if (SubStr(qmBfName, 3, 1)='_') then
+      qmBfPlain := SubStr(qmBfName, 4, StrLength(qmBfName)-3)
+      else
+      if (SubStr(qmBfName, 3, 1)='2') and (SubStr(qmBfName, 4, 1)='_') then
+      qmBfPlain := SubStr(qmBfName, 5, StrLength(qmBfName)-4);
+   end;
+end;
+
+//! The wide font that goes with a bitmap font of the game, for the script of
+//! the text: w<z|j|k>_<name>, w<z|j|k>2_<name> from a screen 1536 high up
+//! (data/hud/fontwide.lib of Core).
+procedure qmWideFont(const qmWfBase : String; const qmWfKind : Integer; var qmWfName : String);
+begin
+   var qmWfLetter : String = 'z';
+   var qmWfScale : String = '';
+   var qmWfPlain : String;
+   if (qmWfKind=1) then qmWfLetter := 'j';
+   if (qmWfKind=2) then qmWfLetter := 'k';
+   qmBitmapFont(qmWfBase, qmWfPlain);
+   if (qmWfPlain='') then qmWfPlain := 'default';
+   if (GetViewerHeight>1535) then qmWfScale := '2';
+   qmWfName := 'w'+qmWfLetter+qmWfScale+'_'+qmWfPlain;
+end;
+
 //! The layout of a text: its width and height, and with wrap on, the text
 //! broken into lines of at most `width` (escapes and tags kept).
-procedure qmWideLayout(const qmWlFont : Integer; const qmWlText : String; const qmWlWidth : Integer; const qmWlWrap : Boolean; var qmWlRes : String; var qmWlW : Integer; var qmWlH : Integer);
+procedure qmWideLayout(const qmWlFont : String; const qmWlText : String; const qmWlWidth : Integer; const qmWlWrap : Boolean; var qmWlRes : String; var qmWlW : Integer; var qmWlH : Integer);
 begin
-   var qmWlFh : Integer = GetGUIElementFontHeight(gUIConst.font[qmWlFont])+3;
+   var qmWlBase : String;
+   var qmWlWide : String;
+   qmBitmapFont(qmWlFont, qmWlBase);
+   qmWideFont(qmWlBase, 0, qmWlWide);
+   var qmWlFh : Integer = GetGUIElementFontHeight(qmWlWide);
+   if (qmWlFh<=0) then
+   qmWlFh := GetGUIElementFontHeight(qmWlBase)+3
+   else
+   if (GetViewerHeight>1535) then
+   qmWlFh := qmWlFh div 2;
    var qmWlLine : String = '';
    var qmWlLineW : Integer = 0;
    var qmWlLines : Integer = 1;
@@ -168,7 +219,7 @@ begin
          end;
          qmWlUnit := SubStr(qmWlText, qmWlI, qmWlJ-qmWlI);
          qmWlNext := qmWlJ;
-         GetGUIElementFontTextRect(gUIConst.font[qmWlFont], qmWlUnit, qmWlUnitW, qmWlMh);
+         GetGUIElementFontTextRect(qmWlBase, qmWlUnit, qmWlUnitW, qmWlMh);
          qmWlUnitW := (qmWlUnitW*5) div 4;
       end;
       if (qmWlBreak) then
@@ -204,7 +255,7 @@ procedure qmRect(const qmRcFont : Integer; const qmRcText : String; var qmRcW : 
 begin
    var qmRcRes : String;
    if (qmWideHas(qmRcText)) then
-   qmWideLayout(qmRcFont, qmRcText, 0, False, qmRcRes, qmRcW, qmRcH)
+   qmWideLayout(gUIConst.font[qmRcFont], qmRcText, 0, False, qmRcRes, qmRcW, qmRcH)
    else
    GetGUIElementFontTextRect(gUIConst.font[qmRcFont], qmRcText, qmRcW, qmRcH);
 end;
@@ -213,7 +264,7 @@ procedure qmRectF(const qmRfFont : Integer; const qmRfText : String; var qmRfW :
 begin
    var qmRfRes : String;
    if (qmWideHas(qmRfText)) then
-   qmWideLayout(qmRfFont, qmRfText, 0, False, qmRfRes, qmRfW, qmRfH)
+   qmWideLayout(gUIConst.font[qmRfFont], qmRfText, 0, False, qmRfRes, qmRfW, qmRfH)
    else
    GetGUIElementFontTextFormatRect(gUIConst.font[qmRfFont], qmRfText, qmRfW, qmRfH);
 end;
@@ -223,7 +274,176 @@ begin
    var qmWpW : Integer;
    var qmWpH : Integer;
    if (qmWideHas(qmWpText)) then
-   qmWideLayout(qmWpFont, qmWpText, qmWpWidth, True, qmWpOut, qmWpW, qmWpH)
+   qmWideLayout(gUIConst.font[qmWpFont], qmWpText, qmWpWidth, True, qmWpOut, qmWpW, qmWpH)
    else
    qmWpOut := GetGUIWrappedTextByFont(gUIConst.font[qmWpFont], qmWpText, qmWpWidth);
+end;
+
+//! The coded form (four hex digits a character, what WideStringAssignStringCoded
+//! reads) of a text, its tags left out, and the kind of its script (0 Han,
+//! 1 kana, 2 Hangul). A byte of 128..159 is the Unicode of the Windows code page.
+procedure qmWideCode(const qmWcText : String; var qmWcOut : String; var qmWcKind : Integer);
+begin
+   const qmWcHex = '0123456789ABCDEF';
+   const qmWcAnsi = '20AC0020201A0192201E20262020202102C620300160203901520020017D0020002020182019201C201D20222013201402DC21220161203A01530020017E0178';
+   var qmWcLen : Integer = StrLength(qmWcText);
+   var qmWcI : Integer = 1;
+   var qmWcC : String;
+   var qmWcTag : Integer;
+   var qmWcU : String;
+   var qmWcN : Integer;
+   var qmWcB : Integer;
+   qmWcOut := '';
+   qmWcKind := 0;
+   while (qmWcI<=qmWcLen) do
+   begin
+      qmWcC := SubStr(qmWcText, qmWcI, 1);
+      qmWcTag := 0;
+      if (qmWcC='%') then
+      qmWcTag := qmWideTagEnd(qmWcText, qmWcI);
+      if (qmWcTag>0) then
+      qmWcI := qmWcTag+1
+      else
+      if (qmWcC='\') and (qmWideEscAt(qmWcText, qmWcI)) then
+      begin
+         qmWcU := SubStr(qmWcText, qmWcI+2, 4);
+         qmWcOut := qmWcOut+qmWcU;
+         qmWcN := StrToInt('$'+qmWcU);
+         if (qmWcN>=12352) and (qmWcN<=12543) then qmWcKind := 1;
+         if (qmWcN>=44032) and (qmWcN<=55203) and (qmWcKind=0) then qmWcKind := 2;
+         qmWcI := qmWcI+6;
+      end
+      else
+      begin
+         qmWcB := Ord(qmWcC);
+         if (qmWcB<32) and (qmWcB<>10) and (qmWcB<>13) then
+         qmWcB := 32;
+         if (qmWcB>=128) and (qmWcB<160) then
+         qmWcOut := qmWcOut+SubStr(qmWcAnsi, (qmWcB-128)*4+1, 4)
+         else
+         qmWcOut := qmWcOut+'00'+SubStr(qmWcHex, (qmWcB div 16)+1, 1)+SubStr(qmWcHex, (qmWcB mod 16)+1, 1);
+         qmWcI := qmWcI+1;
+      end;
+   end;
+end;
+
+//! A wide list has no columns: the cells of a row (parted by a tab) are set
+//! apart with spaces so that each starts where the column of the list starts.
+procedure qmWideColumns(const qmWkList : Integer; const qmWkText : String; var qmWkOut : String);
+begin
+   var qmWkTabs : Integer = GetGUIListBoxTabsCount(qmWkList);
+   var qmWkFont : String;
+   var qmWkRes : String;
+   var qmWkSw : Integer;
+   var qmWkH : Integer;
+   var qmWkX : Integer = 0;
+   var qmWkStart : Integer = 0;
+   var qmWkCell : Integer = 0;
+   var qmWkSeg : String = '';
+   var qmWkLen : Integer = StrLength(qmWkText);
+   var qmWkI : Integer = 1;
+   var qmWkC : String;
+   var qmWkW : Integer;
+   var qmWkR : Float;
+   var qmWkB : Float;
+   var qmWkG : Float;
+   var qmWkA : Float;
+   var qmWkCw : Integer;
+   qmWkOut := qmWkText;
+   if (qmWkTabs>1) and (StrPos(#9, qmWkText)>0) then
+   begin
+      qmWkOut := '';
+      qmWkFont := GetGUIElementFont(qmWkList);
+      qmWideLayout(qmWkFont, ' ', 0, False, qmWkRes, qmWkSw, qmWkH);
+      if (qmWkSw<=0) then qmWkSw := 4;
+      while (qmWkI<=qmWkLen+1) do
+      begin
+         qmWkC := '';
+         if (qmWkI<=qmWkLen) then qmWkC := SubStr(qmWkText, qmWkI, 1);
+         if (qmWkI>qmWkLen) or (qmWkC=#9) then
+         begin
+            qmWkW := 0;
+            if (qmWkSeg<>'') then
+            qmWideLayout(qmWkFont, qmWkSeg, 0, False, qmWkRes, qmWkW, qmWkH);
+            while (qmWkX+qmWkSw<=qmWkStart) do
+            begin
+               qmWkOut := qmWkOut+' ';
+               qmWkX := qmWkX+qmWkSw;
+            end;
+            qmWkOut := qmWkOut+qmWkSeg;
+            qmWkX := qmWkX+qmWkW;
+            qmWkSeg := '';
+            if (qmWkCell<qmWkTabs) then
+            begin
+               GetGUIListBoxTabProperty(qmWkList, qmWkCell, qmWkR, qmWkB, qmWkG, qmWkA, qmWkCw);
+               qmWkStart := qmWkStart+qmWkCw;
+            end;
+            qmWkCell := qmWkCell+1;
+         end
+         else
+         qmWkSeg := qmWkSeg+qmWkC;
+         qmWkI := qmWkI+1;
+      end;
+   end;
+end;
+
+//! The wide text of an item of a wide list, made from the text the item holds.
+procedure qmWideSetItem(const qmWsList : Integer; const qmWsIndex : Integer; const qmWsText : String);
+begin
+   var qmWsCols : String;
+   var qmWsCode : String;
+   var qmWsKind : Integer;
+   qmWideColumns(qmWsList, qmWsText, qmWsCols);
+   qmWideCode(qmWsCols, qmWsCode, qmWsKind);
+   WideStringAssignStringCoded(61001, qmWsCode);
+   SetGUIListBoxItemWideValue(qmWsList, qmWsIndex, 61001);
+   SetGUIListBoxItemValue(qmWsList, qmWsIndex, qmWsText);
+end;
+
+//! GUIListBoxAddItem for a text that may hold escapes: in a wide language
+//! every list is a wide list, so that its items and its font agree; the item
+//! keeps its own text as its value. Any other language, and any text without
+//! an escape, goes the way it always went (Core's upatchListAdd).
+procedure qmListAdd(const qmLaList : Integer; const qmLaText : String; const qmLaTag : Integer);
+begin
+   var qmLaBase : String;
+   var qmLaWide : String;
+   var qmLaKind : Integer = qmWideKind;
+   GUIListBoxAddItem(qmLaList, qmLaText, qmLaTag);
+   if (qmLaKind>=0) and (qmWideHas(qmLaText)) then
+   begin
+      if (not GetGUIListBoxWideMode(qmLaList)) then
+      begin
+         qmBitmapFont(GetGUIElementFont(qmLaList), qmLaBase);
+         qmWideFont(qmLaBase, qmLaKind, qmLaWide);
+         SetGUIListBoxWideMode(qmLaList, True);
+         SetGUIElementFont(qmLaList, qmLaWide);
+      end;
+      qmWideSetItem(qmLaList, GetGUIListBoxItemsCount(qmLaList)-1, qmLaText);
+   end;
+end;
+
+//! SetGUIElementText for a text that may hold escapes (a button's own text):
+//! drawn from the wide font of the size of the element, the bitmap text
+//! cleared. Any other text goes the way it always went (Core's upatchSetText).
+procedure qmSetText(const qmStEl : Integer; const qmStText : String);
+begin
+   var qmStFont : String;
+   var qmStPlain : String;
+   var qmStCode : String;
+   var qmStKind : Integer;
+   var qmStWide : String;
+   if (qmWideHas(qmStText)) then
+   begin
+      qmStFont := GetGUIElementFont(qmStEl);
+      qmBitmapFont(qmStFont, qmStPlain);
+      qmWideCode(qmStText, qmStCode, qmStKind);
+      qmWideFont(qmStPlain, qmStKind, qmStWide);
+      SetGUIElementText(qmStEl, '');
+      SetGUIElementFont(qmStEl, qmStWide);
+      WideStringAssignStringCoded(61000, qmStCode);
+      SetGUIElementWideText(qmStEl, 61000);
+   end
+   else
+   SetGUIElementText(qmStEl, qmStText);
 end;
