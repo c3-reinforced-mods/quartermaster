@@ -532,6 +532,18 @@ begin
       end;
       exit;
    end;
+   //! name.<code>, group.<code> and label.<code>: texts for another language
+   //! (qmAboutLoc reads them), not an unknown key.
+   qmAlX := StrPos('.', qmAlK);
+   if (qmAlX>1) and (StrPos('|'+SubStr(qmAlK, 1, qmAlX-1)+'|', '|name|group|label|')>0) and (qmAlX<StrLength(qmAlK)) then
+   begin
+      qmAlT := SubStr(qmAlK, qmAlX+1, StrLength(qmAlK)-qmAlX);
+      qmAlX := 0;
+      while (qmAlX<StrLength(qmAlT)) and (StrPos(SubStr(qmAlT, qmAlX+1, 1), 'abcdefghijklmnopqrstuvwxyz')>0) do
+      qmAlX := qmAlX+1;
+      if (qmAlX=StrLength(qmAlT)) then
+      exit;
+   end;
    qmAlX := -1;
    if (qmAlK='exclusive') then qmAlX := 0;
    if (qmAlK='requires') then qmAlX := 1;

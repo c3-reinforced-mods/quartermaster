@@ -996,6 +996,9 @@ class Engine(object):
     def n_StrPos(self, sub, s):
         return s.find(sub) + 1
 
+    def n_StrPosEx(self, sub, s, start):
+        return s.find(sub, start - 1) + 1
+
     def n_Ord(self, s):
         return s[0] if s else 0
 

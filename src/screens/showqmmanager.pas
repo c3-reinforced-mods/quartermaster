@@ -1,6 +1,6 @@
 screen: ShowQmManager
 into: data/quartermaster/ui/showqmmanager.inc
-helpers: qmlog, qmstr
+helpers: qmlog, qmstr, qmwide
 requires:
 ---
 //! The manager window (plan G15): Installed on the left, Active in load order
@@ -139,14 +139,15 @@ procedure qmSmFit(const qmSfText : String; const qmSfW : Integer; const qmSfFont
 begin
    var qmSfTw : Integer;
    var qmSfTh : Integer;
-   var qmSfN : Integer = StrLength(qmSfText);
+   var qmSfN : Integer = qmCharLen(qmSfText);
    qmSfOut := qmSfText;
-   GetGUIElementFontTextRect(gUIConst.font[qmSfFont], qmSfOut, qmSfTw, qmSfTh);
+   qmRect(qmSfFont, qmSfOut, qmSfTw, qmSfTh);
    while (qmSfTw>qmSfW) and (qmSfN>1) do
    begin
       qmSfN := qmSfN-1;
-      qmSfOut := SubStr(qmSfText, 1, qmSfN)+'...';
-      GetGUIElementFontTextRect(gUIConst.font[qmSfFont], qmSfOut, qmSfTw, qmSfTh);
+      qmHead(qmSfText, qmSfN, qmSfOut);
+      qmSfOut := qmSfOut+'...';
+      qmRect(qmSfFont, qmSfOut, qmSfTw, qmSfTh);
    end;
 end;
 
@@ -173,7 +174,7 @@ begin
    qmSlLines := 1;
    qmSlCut := False;
    qmSlOut := qmSlText;
-   GetGUIElementFontTextRect(gUIConst.font[qmSlFont], qmSlOut, qmSlTw, qmSlTh);
+   qmRect(qmSlFont, qmSlOut, qmSlTw, qmSlTh);
    if (qmSlTw>qmSlW) then
    begin
       // The last space with a start that fits; the first start that does not
@@ -183,7 +184,7 @@ begin
          if (SubStr(qmSlText, qmSlI, 1)=' ') then
          begin
             qmSlHead := SubStr(qmSlText, 1, qmSlI-1);
-            GetGUIElementFontTextRect(gUIConst.font[qmSlFont], qmSlHead, qmSlTw, qmSlTh);
+            qmRect(qmSlFont, qmSlHead, qmSlTw, qmSlTh);
             if (qmSlTw<=qmSlW) then
             qmSlBreak := qmSlI
             else
@@ -212,10 +213,11 @@ end;
 //! A scrollable text panel in skin window qmStBox (showcampaign.inc:262-278).
 procedure qmSmTextPanel(const qmStBox : Integer; const qmStBody : String; const qmStH : Integer);
 begin
-   var qmStWrapped : String = GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_12], qmStBody, GetGUIElementWidth(qmStBox)-40);
+   var qmStWrapped : String;
+   qmWrap(gc_font_serif_12, qmStBody, GetGUIElementWidth(qmStBox)-40, qmStWrapped);
    var qmStTw : Integer;
    var qmStTh : Integer;
-   GetGUIElementFontTextRect(gUIConst.font[gc_font_serif_12], qmStWrapped, qmStTw, qmStTh);
+   qmRect(gc_font_serif_12, qmStWrapped, qmStTw, qmStTh);
    var qmStLayer : Integer = _gui_CreateScrollLayer('scrolllayer', qmStBox, gc_halParentLeft, gc_valParentTop, 0, 3, 0, qmStH-6, 0, 0, 0, 0, False, qmSmBupdate);
    SetGUIElementCursorByIndex(qmStLayer, 1);
    _gui_CreateText('txt', qmStLayer, qmStWrapped, gc_halParentLeft, gc_valParentTop, qmSmPad+4, qmSmPad-2, qmStTw, qmStTh, gc_halLeft, gc_valTop, gc_font_serif_12, qmSmColor, qmSmBupdate);
@@ -225,6 +227,7 @@ begin
    SetGUIAllowEvents(qmStLayer, qmStScroll, False, False);
 end;
 
+var qmSmWrapped : String;
 var qmSmUi : Integer = ParserSelectByKey('qm_ui');
 var qmSmCore : Integer = GetTriggerManagerStateMachineHandle('qm_core');
 if (qmSmUi=0) or (qmSmCore=0) then
@@ -334,13 +337,14 @@ begin
    SetGUIElementVisible(qmSmSBox, False);
    var qmSmNWnd : Integer = _gui_CreateSkinWindow('nwnd', qmSmNote, gc_halParentMiddle, gc_valParentMiddle, 0, 0, 660, 210, 1, qmSmBupdate);
    // The restart notice.
-   qmSmText := 'Restarting the game';
+   qmSmText := qmT('Restarting the game');
    _gui_CreateText('ntext', qmSmNWnd, qmSmText, gc_halParentMiddle, gc_valParentTop, 0, 36, 0, 0, gc_halMiddle, gc_valMiddle, gc_font_serif_16, qmSmHeadColor, qmSmBupdate);
    qmSmText := ParserGetValueByKeyByHandle(qmSmUi, 'msg');
    if (qmSmText='') then
-   qmSmText := 'Quartermaster has written the new files.';
-   qmSmText := qmSmText+gc_gui_breakline+'The game closes and starts again by itself. This can take up to half a minute; the window may look frozen meanwhile.';
-   qmSmText := GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmText, 600);
+   qmSmText := qmT('Quartermaster has written the new files.');
+   qmSmText := qmSmText+gc_gui_breakline+qmT('The game closes and starts again by itself. This can take up to half a minute; the window may look frozen meanwhile.');
+   qmWrap(gc_font_serif_13, qmSmText, 600, qmSmWrapped);
+   qmSmText := qmSmWrapped;
    _gui_CreateText('nnote', qmSmNWnd, qmSmText, gc_halParentMiddle, gc_valParentTop, 0, 70, 600, 110, gc_halMiddle, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
    SetGUIEventStateOnKeyDown(qmSmEventstate);
    qmLog('ui show restart notice');
@@ -379,13 +383,13 @@ begin
    var qmSmRepBox : Integer = _gui_CreateSkinWindow('rep', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, 60+qmSmHeadOff, qmSmW-qmSmLeftX*2-qmSmScrollOff, qmSmH-230, 1, qmSmBupdate);
    qmSmHead := _gui_CreateSkinHeadWindow('sh', qmSmRepBox, gc_halParentLeft, gc_valParentTop, 0, -qmSmHeadOff, GetGUIElementWidth(qmSmRepBox)+qmSmScrollOff, qmSmBupdate);
    // Head of the report view and the empty-report text.
-   qmSmText := 'By mod, in load order';
+   qmSmText := qmT('By mod, in load order');
    _gui_CreateText('thead', qmSmHead, qmSmText, gc_halParentLeft, gc_valParentMiddle, qmSmPad, 2, GetGUIElementWidth(qmSmHead), 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    var qmSmRep : Integer = ParserSelectByKey('qm_report');
    if (qmSmRep<>0) then
    qmSmLines := ParserGetIntValueByKeyByHandle(qmSmRep, 'mlines');
    if (qmSmLines=0) then
-   qmSmBody := 'No report yet: Quartermaster has not generated anything in this installation.'
+   qmSmBody := qmT('No report yet: Quartermaster has not generated anything in this installation.')
    else
    for qmSmK:=0 to qmSmLines-1 do
    begin
@@ -407,14 +411,14 @@ begin
    var qmSmVn : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'vn');
    var qmSmVs : Integer = ParserGetIntValueByKeyByHandle(qmSmUi, 'vsel');
    // The texts of the Mod files view.
-   qmSmText := 'Find:';
+   qmSmText := qmT('Find:');
    _gui_CreateText('tfind', qmSmWnd, qmSmText, gc_halParentLeft, gc_valParentTop, qmSmLeftX, 70, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    qmSmText := ParserGetValueByKeyByHandle(qmSmUi, 'typed');
    var qmSmVf : Integer = _gui_CreateInputBox('filter', qmSmBox, qmSmText, gc_halParentLeft, gc_valParentTop, (qmSmVw-qmSmW) div 2+qmSmLeftX+80, (qmSmVh-qmSmH) div 2+52, 260, 40, qmSmEventstate, qmSmNul, True, 10, 1, gc_halLeft, gc_valMiddle, gc_font_serif_13, 1, 1, 1, 1, True);
    _gui_InputBoxSetupStrCharFilter(qmSmVf, True, gc_gui_charfilter_default);
    var qmSmVBg : Integer = _gui_CreateSkinWindow('vbox', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmListY+qmSmHeadOff, qmSmW-qmSmLeftX*2-qmSmScrollOff, qmSmListH, 1, qmSmBupdate);
    qmSmHead := _gui_CreateSkinHeadWindow('sh', qmSmVBg, gc_halParentLeft, gc_valParentTop, 0, -qmSmHeadOff, GetGUIElementWidth(qmSmVBg)+qmSmScrollOff, qmSmBupdate);
-   qmSmText := 'Game files of '+ParserGetValueByKeyByHandle(qmSmUi, 'dir'+IntToStr(qmSmMr))+' (type 3 letters of a file path, pick a file, then Copy into mod)';
+   qmSmText := qmT('Game files of %1 (type 3 letters of a file path, pick a file, then Copy into mod)', ParserGetValueByKeyByHandle(qmSmUi, 'dir'+IntToStr(qmSmMr)));
    _gui_CreateText('thead', qmSmHead, qmSmText, gc_halParentLeft, gc_valParentMiddle, qmSmPad, 2, GetGUIElementWidth(qmSmHead), 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    var qmSmVl : Integer = _gui_CreateListBox('vfiles', qmSmVBg, gc_halParentLeft, gc_valParentTop, 2, qmSmPad, GetGUIElementWidth(qmSmVBg)-qmSmPad-2+qmSmScrollOff, GetGUIElementHeight(qmSmVBg)-qmSmPad*2+1, gc_halLeft, gc_valMiddle, 0, 0, gc_font_serif_12, qmSmEventstate, False, qmSmBupdate);
    for qmSmT:=GetGUIListBoxTabsCount(qmSmVl)-1 downto 0 do
@@ -430,9 +434,9 @@ begin
       qmSmVc := ParserGetValueByKeyByHandle(qmSmUi, 'vc'+IntToStr(qmSmVk));
       // How a game file is treated, in the list.
       if (qmSmVc='merge') then
-      qmSmVc := 'merged with other mods'
+      qmSmVc := qmTL('merged with other mods')
       else
-      qmSmVc := 'not merged - the last mod''s copy is used';
+      qmSmVc := qmTL('not merged - the last mod''s copy is used');
       GUIListBoxAddItem(qmSmVl, #9+ParserGetValueByKeyByHandle(qmSmUi, 'v'+IntToStr(qmSmVk))+#9+qmSmVc, qmSmVk);
       if (qmSmVk=qmSmVs) then
       SetGUIListBoxItemIndexSilent(qmSmVl, qmSmVk);
@@ -440,9 +444,9 @@ begin
    var qmSmVneed : Boolean = _gui_SetListBoxHeight(qmSmVl, (qmSmListH-qmSmPad*2) div (GetGUIElementFontHeight(gUIConst.font[gc_font_serif_12])+4));
    _gui_AddScroller(qmSmVl, gc_halParentRightWidth, gc_valParentTop, 28-4+5, 14+3-2, 0, GetGUIElementHeight(qmSmVBg), qmSmVneed);
    // The captions of the Mod files view.
-   qmSmButton('bmfabout', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmListY+qmSmHeadOff+qmSmListH+10, 'Create about.cfg', qmTagMfAbout, ParserGetIntValueByKeyByHandle(qmSmUi, 'mfhas')=0);
-   qmSmButton('bmfcopy', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX+200, qmSmListY+qmSmHeadOff+qmSmListH+10, 'Copy into mod', qmTagMfCopy, qmSmVs>=0);
-   qmSmButton('bmfback', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX+400, qmSmListY+qmSmHeadOff+qmSmListH+10, 'Back', qmTagMfBack, True);
+   qmSmButton('bmfabout', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmListY+qmSmHeadOff+qmSmListH+10, qmT('Create about.cfg'), qmTagMfAbout, ParserGetIntValueByKeyByHandle(qmSmUi, 'mfhas')=0);
+   qmSmButton('bmfcopy', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX+200, qmSmListY+qmSmHeadOff+qmSmListH+10, qmT('Copy into mod'), qmTagMfCopy, qmSmVs>=0);
+   qmSmButton('bmfback', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX+400, qmSmListY+qmSmHeadOff+qmSmListH+10, qmT('Back'), qmTagMfBack, True);
 end
 else
 if (qmSmPanel=2) then
@@ -481,12 +485,12 @@ begin
    var qmSmOBg : Integer = _gui_CreateSkinWindow('opts', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmOtop+qmSmHeadOff, qmSmW-qmSmLeftX*2-qmSmScrollOff, qmSmOht, 1, qmSmBupdate);
    qmSmHead := _gui_CreateSkinHeadWindow('sh', qmSmOBg, gc_halParentLeft, gc_valParentTop, 0, -qmSmHeadOff, GetGUIElementWidth(qmSmOBg)+qmSmScrollOff, qmSmBupdate);
    // The head, captions and value words of the Options view.
-   qmSmText := 'Options: '+ParserGetValueByKeyByHandle(qmSmUi, 'name'+IntToStr(qmSmOpt));
+   qmSmText := qmT('Options: %1', ParserGetValueByKeyByHandle(qmSmUi, 'name'+IntToStr(qmSmOpt)));
    // What a search found, in the head.
    if (qmSmOq<>'') then
-   qmSmText := qmSmText+' - '+IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'optshown'))+' found';
+   qmSmText := qmSmText+' - '+qmT('%1 found', IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'optshown')));
    if (qmSmOpages>1) then
-   qmSmText := qmSmText+' (page '+IntToStr(qmSmOpg+1)+' of '+IntToStr(qmSmOpages)+')';
+   qmSmText := qmSmText+' ('+qmT('page %1 of %2', IntToStr(qmSmOpg+1), IntToStr(qmSmOpages))+')';
    _gui_CreateText('thead', qmSmHead, qmSmText, gc_halParentLeft, gc_valParentMiddle, qmSmPad, 2, GetGUIElementWidth(qmSmHead), 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    var qmSmOk : Integer;
    var qmSmOr : Integer;
@@ -502,7 +506,7 @@ begin
    // What the rows say when a search finds nothing (no other view is empty).
    if (qmSmOrows=0) then
    begin
-      qmSmText := 'No setting has this in its name. Esc empties the search.';
+      qmSmText := qmT('No setting has this in its name. Esc empties the search.');
       _gui_CreateText('onone', qmSmOBg, qmSmText, gc_halParentLeft, gc_valParentTop, 16, 14, 0, 36, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmGrey, qmSmBupdate);
    end;
    for qmSmOr:=0 to qmSmOper-1 do
@@ -523,7 +527,7 @@ begin
          qmSmOgt := ParserGetValueByKeyByHandle(qmSmUi, 'ogr'+IntToStr(qmSmOk));
          // The mark of a group's title on a later page of the group.
          if (qmSmOhd=2) then
-         qmSmOgt := qmSmOgt+' (continued)';
+         qmSmOgt := qmSmOgt+' ('+qmT('continued')+')';
          qmSmFit(qmSmOgt, 940, gc_font_serif_16, qmSmOlb);
          _gui_CreateText('ogh'+IntToStr(qmSmOr), qmSmOBg, qmSmOlb, gc_halParentLeft, gc_valParentTop, 16, qmSmOy+8, 950, 36, gc_halLeft, gc_valMiddle, gc_font_serif_16, qmSmHeadColor, qmSmBupdate);
       end;
@@ -535,7 +539,7 @@ begin
          var qmSmOlt : String = ParserGetValueByKeyByHandle(qmSmUi, 'olb'+qmSmOs);
          // The mark of a setting the host decides in multiplayer.
          if (ParserGetValueByKeyByHandle(qmSmUi, 'osc'+qmSmOs)='host') then
-         qmSmOlt := qmSmOlt+' (the host decides in multiplayer)';
+         qmSmOlt := qmSmOlt+' ('+qmT('the host decides in multiplayer')+')';
          qmSmLabel(qmSmOlt, 410, gc_font_serif_13, qmSmOll, qmSmOcut, qmSmOlb);
          if (qmSmOll=1) then
          _gui_CreateText('olb'+qmSmOs, qmSmOBg, qmSmOlb, gc_halParentLeft, gc_valParentTop, 16, qmSmOy, 420, 36, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate)
@@ -550,27 +554,28 @@ begin
          //! wrapped at the label's own width.
          if (qmSmOcut) then
          begin
-            qmSmText := gUIConst.fontstyle[gc_font_serif_13]+gc_font_color_white+GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmOlt, 420);
+            qmWrap(gc_font_serif_13, qmSmOlt, 420, qmSmWrapped);
+            qmSmText := gUIConst.fontstyle[gc_font_serif_13]+gc_font_color_white+qmSmWrapped;
             _gui_CreateImageActive('olh'+qmSmOs, qmSmOBg, qmSmNul, gc_halParentLeft, gc_valParentTop, 16, qmSmOy-4, 420, 44, 0, qmSmNul, qmSmText, qmSmBupdate);
          end;
          if (qmSmOty='bool') then
          begin
             if (qmSmOval='1') then
-            qmSmOval := 'On'
+            qmSmOval := qmT('On')
             else
-            qmSmOval := 'Off';
+            qmSmOval := qmT('Off');
          end;
          if (qmSmOty='key') and (qmSmOcap=qmSmOk) then
-         qmSmOval := 'press a key...';
+         qmSmOval := qmT('press a key...');
          if (qmSmOty='text') and (qmSmOval='') then
-         qmSmOval := '(empty)';
+         qmSmOval := qmT('(empty)');
          if (ParserGetValueByKeyByHandle(qmSmUi, 'ov'+qmSmOs)<>ParserGetValueByKeyByHandle(qmSmUi, 'ovs'+qmSmOs)) then
          qmSmOval := gc_font_color_green+qmSmOval+gc_font_color_default;
          if not ((qmSmOty='text') and (qmSmOsel=qmSmOk)) then
          _gui_CreateText('oval'+qmSmOs, qmSmOBg, qmSmOval, gc_halParentLeft, gc_valParentTop, 440, qmSmOy, 160, 36, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
          // The captions of a setting's buttons.
          if (qmSmOty='bool') then
-         qmSmButton('ob1'+qmSmOs, qmSmOBg, gc_halParentLeft, gc_valParentTop, 800, qmSmOy-2, 'Switch', qmTagOptRow+qmSmOk*2, True);
+         qmSmButton('ob1'+qmSmOs, qmSmOBg, gc_halParentLeft, gc_valParentTop, 800, qmSmOy-2, qmT('Switch'), qmTagOptRow+qmSmOk*2, True);
          if (qmSmOty='int') or (qmSmOty='float') then
          begin
             qmSmButton('ob2'+qmSmOs, qmSmOBg, gc_halParentLeft, gc_valParentTop, 610, qmSmOy-2, '-', qmTagOptRow+qmSmOk*2+1, True);
@@ -582,10 +587,10 @@ begin
             qmSmButton('ob1'+qmSmOs, qmSmOBg, gc_halParentLeft, gc_valParentTop, 800, qmSmOy-2, '>', qmTagOptRow+qmSmOk*2, True);
          end;
          if (qmSmOty='key') then
-         qmSmButton('ob1'+qmSmOs, qmSmOBg, gc_halParentLeft, gc_valParentTop, 800, qmSmOy-2, 'Change', qmTagOptRow+qmSmOk*2, qmSmOcap<>qmSmOk);
+         qmSmButton('ob1'+qmSmOs, qmSmOBg, gc_halParentLeft, gc_valParentTop, 800, qmSmOy-2, qmT('Change'), qmTagOptRow+qmSmOk*2, qmSmOcap<>qmSmOk);
          if (qmSmOty='text') then
          begin
-            qmSmButton('ob1'+qmSmOs, qmSmOBg, gc_halParentLeft, gc_valParentTop, 800, qmSmOy-2, 'Edit', qmTagOptRow+qmSmOk*2, qmSmOsel<>qmSmOk);
+            qmSmButton('ob1'+qmSmOs, qmSmOBg, gc_halParentLeft, gc_valParentTop, 800, qmSmOy-2, qmT('Edit'), qmTagOptRow+qmSmOk*2, qmSmOsel<>qmSmOk);
             if (qmSmOsel=qmSmOk) then
             begin
                //! The text box, in the value column of its row: window position
@@ -601,8 +606,8 @@ begin
    // The page buttons of the Options view.
    if (qmSmOpages>1) then
    begin
-      qmSmButton('bprev', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmOtop+qmSmHeadOff+qmSmOht+6, 'Previous', qmTagOptPrev, qmSmOpg>0);
-      qmSmButton('bnext', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmW-qmSmLeftX-qmSmScrollOff-177, qmSmOtop+qmSmHeadOff+qmSmOht+6, 'Next', qmTagOptNext, qmSmOpg<qmSmOpages-1);
+      qmSmButton('bprev', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmOtop+qmSmHeadOff+qmSmOht+6, qmT('Previous'), qmTagOptPrev, qmSmOpg>0);
+      qmSmButton('bnext', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmW-qmSmLeftX-qmSmScrollOff-177, qmSmOtop+qmSmHeadOff+qmSmOht+6, qmT('Next'), qmTagOptNext, qmSmOpg<qmSmOpages-1);
    end;
    //! The strip. The list of groups is vanilla's combo box, made and filled
    //! as the campaign window makes its difficulty list (showcampaign.inc:
@@ -616,7 +621,7 @@ begin
       if (qmSmOgn>0) then
       begin
          // The captions of the strip.
-         qmSmText := 'Group:';
+         qmSmText := qmT('Group:');
          _gui_CreateText('tgroup', qmSmWnd, qmSmText, gc_halParentLeft, gc_valParentTop, qmSmOsx, 70, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
          // The open list shows twelve entries at most and scrolls the rest. The
          // box is some 22 high: at 60 its middle is the search box's (seen in
@@ -630,11 +635,11 @@ begin
             qmSmOgt := ParserGetValueByKeyByHandle(qmSmUi, 'ogt'+IntToStr(qmSmOk));
             // The name of the settings that stand under no group.
             if (qmSmOgt='') then
-            qmSmOgt := 'General';
+            qmSmOgt := qmTL('General');
             qmSmFit(qmSmOgt+' ('+IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'ogc'+IntToStr(qmSmOk)))+')', 290, gc_font_serif_12, qmSmOlb);
             GUIListBoxAddItem(qmSmOcb, qmSmOlb, qmSmOk);
          end;
-         qmSmText := 'All settings ('+IntToStr(qmSmOn)+')';
+         qmSmText := qmTL('All settings (%1)', IntToStr(qmSmOn));
          GUIListBoxAddItem(qmSmOcb, qmSmText, qmSmOgn);
          //! A search goes over every group, so while one is on the list
          //! says All settings; the group comes back with the emptied box
@@ -646,7 +651,7 @@ begin
          SetGUIListBoxItemIndexSilent(qmSmOcb, ParserGetIntValueByKeyByHandle(qmSmUi, 'optgrp'));
          qmSmOsx := qmSmOsx+450;
       end;
-      qmSmText := 'Search:';
+      qmSmText := qmT('Search:');
       _gui_CreateText('tsearch', qmSmWnd, qmSmText, gc_halParentLeft, gc_valParentTop, qmSmOsx, 70, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
       qmSmSBoxOn := True;
       var qmSmOfind : Integer = _gui_CreateInputBox('ofind', qmSmSBox, qmSmOq, gc_halParentLeft, gc_valParentTop, (qmSmVw-qmSmW) div 2+qmSmOsx+80, (qmSmVh-qmSmH) div 2+52, 260, 40, qmSmEventstate, qmSmNul, True, 10, 1, gc_halLeft, gc_valMiddle, gc_font_serif_13, 1, 1, 1, 1, True);
@@ -657,7 +662,7 @@ else
 begin
    // filter: every keystroke filters the Installed list (EventQmManager)
    // Filter label.
-   qmSmText := 'Filter:';
+   qmSmText := qmT('Filter:');
    _gui_CreateText('tfilter', qmSmWnd, qmSmText, gc_halParentLeft, gc_valParentTop, qmSmLeftX, 70, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    SetGUIElementVisible(qmSmBox, True);
    qmSmText := ParserGetValueByKeyByHandle(qmSmUi, 'typed');
@@ -683,7 +688,7 @@ begin
    var qmSmInstBg : Integer = _gui_CreateSkinWindow('inst', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmListY+qmSmHeadOff, qmSmListW, qmSmListH, 1, qmSmBupdate);
    qmSmHead := _gui_CreateSkinHeadWindow('sh', qmSmInstBg, gc_halParentLeft, gc_valParentTop, 0, -qmSmHeadOff, GetGUIElementWidth(qmSmInstBg)+qmSmScrollOff, qmSmBupdate);
    // Head of the Installed list.
-   qmSmText := 'Installed';
+   qmSmText := qmT('Installed');
    _gui_CreateText('thead', qmSmHead, qmSmText, gc_halParentLeft, gc_valParentMiddle, qmSmPad, 2, GetGUIElementWidth(qmSmHead), 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    var qmSmInst : Integer = _gui_CreateListBox('installed', qmSmInstBg, gc_halParentLeft, gc_valParentTop, 2, qmSmPad, GetGUIElementWidth(qmSmInstBg)-qmSmPad-2+qmSmScrollOff, GetGUIElementHeight(qmSmInstBg)-qmSmPad*2+1, gc_halLeft, gc_valMiddle, 0, 0, gc_font_serif_12, qmSmEventstate, False, qmSmBupdate);
    for qmSmT:=GetGUIListBoxTabsCount(qmSmInst)-1 downto 0 do
@@ -759,7 +764,7 @@ begin
    var qmSmActBg : Integer = _gui_CreateSkinWindow('act', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmRightX, qmSmListY+qmSmHeadOff, qmSmListW, qmSmListH, 1, qmSmBupdate);
    qmSmHead := _gui_CreateSkinHeadWindow('sh', qmSmActBg, gc_halParentLeft, gc_valParentTop, 0, -qmSmHeadOff, GetGUIElementWidth(qmSmActBg)+qmSmScrollOff, qmSmBupdate);
    // Head of the Active list.
-   qmSmText := 'Active (load order)';
+   qmSmText := qmT('Active (load order)');
    _gui_CreateText('thead', qmSmHead, qmSmText, gc_halParentLeft, gc_valParentMiddle, qmSmPad, 2, GetGUIElementWidth(qmSmHead), 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    var qmSmAct : Integer = _gui_CreateListBox('active', qmSmActBg, gc_halParentLeft, gc_valParentTop, 2, qmSmPad, GetGUIElementWidth(qmSmActBg)-qmSmPad-2+qmSmScrollOff, GetGUIElementHeight(qmSmActBg)-qmSmPad*2+1, gc_halLeft, gc_valMiddle, 0, 0, gc_font_serif_12, qmSmEventstate, False, qmSmBupdate);
    for qmSmT:=GetGUIListBoxTabsCount(qmSmAct)-1 downto 0 do
@@ -846,30 +851,30 @@ begin
       qmSmCanDown := (qmSmPlace>=0) and (qmSmPlace<qmSmActive-1);
    end;
    // Captions of the move buttons.
-   qmSmButton('bact', qmSmWnd, gc_halParentMiddle, gc_valParentTop, 0, qmSmListY+qmSmHeadOff+100, 'Activate >', qmTagAct, qmSmCanAct);
-   qmSmButton('bdeact', qmSmWnd, gc_halParentMiddle, gc_valParentTop, 0, qmSmListY+qmSmHeadOff+160, '< Deactivate', qmTagDeact, qmSmCanDeact);
+   qmSmButton('bact', qmSmWnd, gc_halParentMiddle, gc_valParentTop, 0, qmSmListY+qmSmHeadOff+100, qmT('Activate >'), qmTagAct, qmSmCanAct);
+   qmSmButton('bdeact', qmSmWnd, gc_halParentMiddle, gc_valParentTop, 0, qmSmListY+qmSmHeadOff+160, qmT('< Deactivate'), qmTagDeact, qmSmCanDeact);
    // Options: the selected mod declares settings in its about.cfg (qmUiModel
    // abs<i>); Auto-sort: the canonical order is known (hascanon).
    var qmSmCanOpt : Boolean = False;
    if (qmSmSel>=0) and (qmSmSel<qmSmN) then
    qmSmCanOpt := (ParserGetIntValueByKeyByHandle(qmSmUi, 'abs'+IntToStr(qmSmSel))>0) and (ParserGetIntValueByKeyByHandle(qmSmUi, 'abok')=1);
-   qmSmButton('bopt', qmSmWnd, gc_halParentMiddle, gc_valParentTop, 0, qmSmListY+qmSmHeadOff+40, 'Options', qmTagOptions, qmSmCanOpt);
-   qmSmButton('bsort', qmSmWnd, gc_halParentMiddle, gc_valParentTop, 0, qmSmListY+qmSmHeadOff+220, 'Auto-sort', qmTagAutoSort, ParserGetIntValueByKeyByHandle(qmSmUi, 'hascanon')=1);
+   qmSmButton('bopt', qmSmWnd, gc_halParentMiddle, gc_valParentTop, 0, qmSmListY+qmSmHeadOff+40, qmT('Options'), qmTagOptions, qmSmCanOpt);
+   qmSmButton('bsort', qmSmWnd, gc_halParentMiddle, gc_valParentTop, 0, qmSmListY+qmSmHeadOff+220, qmT('Auto-sort'), qmTagAutoSort, ParserGetIntValueByKeyByHandle(qmSmUi, 'hascanon')=1);
    // New mod, and Mod files of a selected local mod (plan G17, M11).
    var qmSmCanFiles : Boolean = False;
    if (qmSmSel>=0) and (qmSmSel<qmSmN) then
    qmSmCanFiles := (ParserGetValueByKeyByHandle(qmSmUi, 'org'+IntToStr(qmSmSel))='Local') or (ParserGetValueByKeyByHandle(qmSmUi, 'org'+IntToStr(qmSmSel))='Local copy');
    // The captions of New mod and Mod files.
-   qmSmButton('bnewmod', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmListY+qmSmHeadOff+qmSmListH+10, 'New mod', qmTagNewMod, True);
-   qmSmButton('bmodfiles', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX+200, qmSmListY+qmSmHeadOff+qmSmListH+10, 'Mod files', qmTagModFiles, qmSmCanFiles);
-   qmSmButton('bup', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmRightX, qmSmListY+qmSmHeadOff+qmSmListH+10, 'Move up', qmTagUp, qmSmCanUp);
-   qmSmButton('bdown', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmRightX+200, qmSmListY+qmSmHeadOff+qmSmListH+10, 'Move down', qmTagDown, qmSmCanDown);
+   qmSmButton('bnewmod', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmListY+qmSmHeadOff+qmSmListH+10, qmT('New mod'), qmTagNewMod, True);
+   qmSmButton('bmodfiles', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX+200, qmSmListY+qmSmHeadOff+qmSmListH+10, qmT('Mod files'), qmTagModFiles, qmSmCanFiles);
+   qmSmButton('bup', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmRightX, qmSmListY+qmSmHeadOff+qmSmListH+10, qmT('Move up'), qmTagUp, qmSmCanUp);
+   qmSmButton('bdown', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmRightX+200, qmSmListY+qmSmHeadOff+qmSmListH+10, qmT('Move down'), qmTagDown, qmSmCanDown);
 
    // the Details line of the selected mod (qmUiDetails)
    var qmSmDescr : Integer = _gui_CreateSkinWindow('descr', qmSmWnd, gc_halParentLeft, gc_valParentTop, qmSmLeftX, qmSmDescrY+qmSmHeadOff, qmSmW-qmSmLeftX*2-qmSmScrollOff, qmSmDescrH, 1, qmSmBupdate);
    qmSmHead := _gui_CreateSkinHeadWindow('sh', qmSmDescr, gc_halParentLeft, gc_valParentTop, 0, -qmSmHeadOff, GetGUIElementWidth(qmSmDescr)+qmSmScrollOff, qmSmBupdate);
    // Head of the details panel.
-   qmSmText := 'Details';
+   qmSmText := qmT('Details');
    _gui_CreateText('thead', qmSmHead, qmSmText, gc_halParentLeft, gc_valParentMiddle, qmSmPad, 2, GetGUIElementWidth(qmSmHead), 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    qmSmLines := ParserGetIntValueByKeyByHandle(qmSmUi, 'dn');
    for qmSmK:=0 to qmSmLines-1 do
@@ -915,7 +920,7 @@ begin
    qmSmPfirst := ParserGetValueByKeyByHandle(qmSmUi, 'pa0')+'.';
    qmSmText := qmSmPfirst;
    if (qmSmPa>1) then
-   qmSmText := qmSmText+' ('+IntToStr(qmSmPa-1)+' more)';
+   qmSmText := qmSmText+' ('+qmT('%1 more', IntToStr(qmSmPa-1))+')';
 end;
 // The clash line, orange: two mods that ship the same file may still run
 // together, and the start-up guard undoes a start that stops (red, and a
@@ -923,13 +928,13 @@ end;
 if (qmSmText='') and (qmSmPc>0) then
 begin
    qmSmMsgHex := gc_font_hex_color_orange;
-   qmSmText := 'May clash: '+ParserGetValueByKeyByHandle(qmSmUi, 'pc0')+'. If the game does not start with both, Quartermaster switches back.';
+   qmSmText := qmT('May clash: %1. If the game does not start with both, Quartermaster switches back.', ParserGetValueByKeyByHandle(qmSmUi, 'pc0'));
    if (qmSmPc>1) then
-   qmSmText := qmSmText+' ('+IntToStr(qmSmPc-1)+' more)';
+   qmSmText := qmSmText+' ('+qmT('%1 more', IntToStr(qmSmPc-1))+')';
 end;
 // The pending-changes line.
 if (qmSmText='') and (qmSmCan=1) and (qmSmPanel<>2) then
-qmSmText := 'Pending changes: '+IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'chg'))+' mod(s), load order '+IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'ordchg'))+'. Apply writes them and restarts the game.';
+qmSmText := qmT('Pending changes: %1 mod(s), load order %2. Apply writes them and restarts the game.', IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'chg')), IntToStr(ParserGetIntValueByKeyByHandle(qmSmUi, 'ordchg')));
 // The line wraps to the window's width, and _gui_CreateText takes its height
 // from the wrapped text (gui.script:288-296): a clash names two mods, and as
 // one line it ran past both edges of the window (run look-wsX). The element
@@ -940,30 +945,31 @@ var qmSmMsgColor : TColor;
 _gui_SetupTColorInteger(255, 220, 170, 255, 0.9, qmSmMsgColor);
 if (qmSmMsgHex<>'') then
 _gui_ConvertHexToTColor(qmSmMsgHex, qmSmMsgColor);
-qmSmText := GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmText, qmSmW-80);
+qmWrap(gc_font_serif_13, qmSmText, qmSmW-80, qmSmWrapped);
+qmSmText := qmSmWrapped;
 var qmSmMsgW : Integer;
 var qmSmMsgH : Integer;
-GetGUIElementFontTextFormatRect(gUIConst.font[gc_font_serif_13], qmSmText, qmSmMsgW, qmSmMsgH);
+qmRectF(gc_font_serif_13, qmSmText, qmSmMsgW, qmSmMsgH);
 var qmSmMsgY : Integer = -92+Max(0, qmSmMsgH-GetGUIElementFontHeight(gUIConst.font[gc_font_serif_13])) div 2;
 _gui_CreateText('tmsg', qmSmWnd, qmSmText, gc_halParentMiddle, gc_valParentBottomHeight, 0, qmSmMsgY, qmSmW-80, 0, gc_halMiddle, gc_valMiddle, gc_font_serif_13, qmSmMsgColor, qmSmBupdate);
 // Captions of the bottom buttons.
 if (qmSmPanel=2) then
 begin
    // The Options view keeps its edits until Accept (qmUiAct optacc).
-   qmSmButton('boacc', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -300, -40, 'Accept', qmTagOptAccept, True);
-   qmSmButton('bocan', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -100, -40, 'Cancel', qmTagOptCancel, True);
-   qmSmButton('bodef', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, 100, -40, 'Defaults', qmTagOptDefaults, True);
+   qmSmButton('boacc', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -300, -40, qmT('Accept'), qmTagOptAccept, True);
+   qmSmButton('bocan', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -100, -40, qmT('Cancel'), qmTagOptCancel, True);
+   qmSmButton('bodef', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, 100, -40, qmT('Defaults'), qmTagOptDefaults, True);
 end
 else
 begin
-   qmSmButton('bapply', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -300, -40, 'Apply', qmTagApply, qmSmCan=1);
+   qmSmButton('bapply', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -300, -40, qmT('Apply'), qmTagApply, qmSmCan=1);
    if (qmSmPanel=1) then
-   qmSmButton('breport', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -100, -40, 'Back', qmTagReport, True)
+   qmSmButton('breport', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -100, -40, qmT('Back'), qmTagReport, True)
    else
-   qmSmButton('breport', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -100, -40, 'Report', qmTagReport, True);
-   qmSmButton('bworkshop', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, 100, -40, 'Open Workshop', qmTagWorkshop, True);
+   qmSmButton('breport', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, -100, -40, qmT('Report'), qmTagReport, True);
+   qmSmButton('bworkshop', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, 100, -40, qmT('Open Workshop'), qmTagWorkshop, True);
 end;
-qmSmButton('bclose2', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, 300, -40, 'Close', gc_gui_event_tagClose, True);
+qmSmButton('bclose2', qmSmWnd, gc_halParentMiddle, gc_valParentBottomHeight, 300, -40, qmT('Close'), gc_gui_event_tagClose, True);
 
 // the confirm dialog, in its own layer over the window: the changes it applies
 if (qmSmMode=1) then
@@ -983,35 +989,35 @@ begin
    var qmSmCWnd : Integer = _gui_CreateSkinWindow('cwnd', qmSmConf, gc_halParentMiddle, gc_valParentMiddle, 0, 0, 820, 216+qmSmCl*qmSmLh+qmSmBh, 1, qmSmBupdate);
    // The confirm dialog's question, note and button captions.
    if (qmSmBlk>0) and (ParserGetIntValueByKeyByHandle(qmSmUi, 'confbrule')=1) then
-   qmSmText := 'This set of mods cannot be applied'
+   qmSmText := qmT('This set of mods cannot be applied')
    else
    if (qmSmBlk>0) then
-   qmSmText := 'These mods cannot be active together'
+   qmSmText := qmT('These mods cannot be active together')
    else
-   qmSmText := 'Apply these changes and restart the game?';
+   qmSmText := qmT('Apply these changes and restart the game?');
    _gui_CreateText('ctext', qmSmCWnd, qmSmText, gc_halParentMiddle, gc_valParentTop, 0, 34, 0, 0, gc_halMiddle, gc_valMiddle, gc_font_serif_16, qmSmHeadColor, qmSmBupdate);
    if (qmSmBlk>0) then
    begin
       // The clash note of the confirm dialog.
       if (ParserGetIntValueByKeyByHandle(qmSmUi, 'confbrule')=1) then
-      qmSmBody := gc_font_color_red+'Their about.cfg rules, or core scripts both of them replace, rule it out:'
+      qmSmBody := gc_font_color_red+qmT('Their about.cfg rules, or core scripts both of them replace, rule it out:')
       else
-      qmSmBody := gc_font_color_red+'Both mods of each pair replace the same core script. Only one copy can load, and the game would stop at "Error compiling scripts":';
+      qmSmBody := gc_font_color_red+qmT('Both mods of each pair replace the same core script. Only one copy can load, and the game would stop at "Error compiling scripts":');
       for qmSmK:=0 to qmSmBlk-1 do
       qmSmBody := qmSmBody+gc_gui_breakline+gc_font_color_red+ParserGetValueByKeyByHandle(qmSmUi, 'confb'+IntToStr(qmSmK));
       _gui_CreateText('cblk', qmSmCWnd, qmSmBody, gc_halParentLeft, gc_valParentTop, 50, 58, 720, qmSmBh, gc_halLeft, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
    end;
    // The heads of the two columns and the no-switch line.
-   qmSmText := 'Changes:';
+   qmSmText := qmT('Changes:');
    _gui_CreateText('chead', qmSmCWnd, qmSmText, gc_halParentLeft, gc_valParentTop, 50, 66+qmSmBh, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmHeadColor, qmSmBupdate);
    if (ParserGetIntValueByKeyByHandle(qmSmUi, 'confordchg')=1) then
-   qmSmText := 'Load order (changed):'
+   qmSmText := qmT('Load order (changed):')
    else
-   qmSmText := 'Load order:';
+   qmSmText := qmT('Load order:');
    _gui_CreateText('cohead', qmSmCWnd, qmSmText, gc_halParentLeft, gc_valParentTop, 430, 66+qmSmBh, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmHeadColor, qmSmBupdate);
    qmSmBody := '';
    if (qmSmCn=0) then
-   qmSmBody := 'no mod switched on or off'
+   qmSmBody := qmT('no mod switched on or off')
    else
    for qmSmK:=0 to qmSmCn-1 do
    begin
@@ -1030,12 +1036,12 @@ begin
    _gui_CreateText('colist', qmSmCWnd, qmSmBody, gc_halParentLeft, gc_valParentTop, 430, 84+qmSmBh, 350, qmSmCl*qmSmLh+4, gc_halLeft, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
    // The dialog's key note, with and without clashes.
    if (qmSmBlk>0) then
-   qmSmText := 'Esc goes back; deactivate one mod of each pair first.'
+   qmSmText := qmT('Esc goes back; deactivate one mod of each pair first.')
    else
-   qmSmText := 'Enter confirms, Esc cancels.';
+   qmSmText := qmT('Enter confirms, Esc cancels.');
    _gui_CreateText('cnote', qmSmCWnd, qmSmText, gc_halParentMiddle, gc_valParentBottomHeight, 0, -76, 0, 0, gc_halMiddle, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
-   qmSmButton('byes', qmSmCWnd, gc_halParentMiddle, gc_valParentBottomHeight, -110, -28, 'Apply', qmTagYes, qmSmBlk=0);
-   qmSmButton('bno', qmSmCWnd, gc_halParentMiddle, gc_valParentBottomHeight, 110, -28, 'Cancel', qmTagNo, True);
+   qmSmButton('byes', qmSmCWnd, gc_halParentMiddle, gc_valParentBottomHeight, -110, -28, qmT('Apply'), qmTagYes, qmSmBlk=0);
+   qmSmButton('bno', qmSmCWnd, gc_halParentMiddle, gc_valParentBottomHeight, 110, -28, qmT('Cancel'), qmTagNo, True);
 end;
 
 // the new-mod dialog, over the window (mode 4; qmUiAct nm*)
@@ -1046,25 +1052,25 @@ begin
    SetGUIElementUserBlend(qmSmNMask, 0.5);
    var qmSmNWnd2 : Integer = _gui_CreateSkinWindow('nwnd', qmSmNm, gc_halParentMiddle, gc_valParentMiddle, 0, 0, 820, 330, 1, qmSmBupdate);
    // The texts and captions of the new-mod dialog.
-   qmSmText := 'New mod';
+   qmSmText := qmT('New mod');
    _gui_CreateText('ntitle', qmSmNWnd2, qmSmText, gc_halParentMiddle, gc_valParentTop, 0, 34, 0, 0, gc_halMiddle, gc_valMiddle, gc_font_serif_16, qmSmHeadColor, qmSmBupdate);
-   qmSmText := 'Name:';
+   qmSmText := qmT('Name:');
    _gui_CreateText('nlabel', qmSmNWnd2, qmSmText, gc_halParentLeft, gc_valParentTop, 50, 90, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    qmSmText := ParserGetValueByKeyByHandle(qmSmUi, 'nmname');
    var qmSmNIn : Integer = _gui_CreateInputBox('nname', qmSmNBox, qmSmText, gc_halParentLeft, gc_valParentTop, (qmSmVw-820) div 2+140, (qmSmVh-330) div 2+70, 400, 40, qmSmEventstate, qmSmNul, True, 40, 1, gc_halLeft, gc_valMiddle, gc_font_serif_13, 1, 1, 1, 1, True);
    _gui_InputBoxSetupStrCharFilter(qmSmNIn, True, gc_gui_charfilter_default);
-   qmSmText := 'Folder: mods\'+ParserGetValueByKeyByHandle(qmSmUi, 'nmfolder');
+   qmSmText := qmT('Folder: %1', 'mods\'+ParserGetValueByKeyByHandle(qmSmUi, 'nmfolder'));
    _gui_CreateText('nfolder', qmSmNWnd2, qmSmText, gc_halParentLeft, gc_valParentTop, 50, 140, 0, 0, gc_halLeft, gc_valMiddle, gc_font_serif_13, qmSmColor, qmSmBupdate);
    if (ParserGetIntValueByKeyByHandle(qmSmUi, 'nmtype')=1) then
-   qmSmText := 'Type: total conversion'
+   qmSmText := qmT('Type: total conversion')
    else
-   qmSmText := 'Type: mod';
+   qmSmText := qmT('Type: mod');
    qmSmButton('bnmtype', qmSmNWnd2, gc_halParentLeft, gc_valParentTop, 50, 175, qmSmText, qmTagNmType, True);
    qmField('|none|camera|ai|ui|balance|economy|sound|graphics|hotkeys|', '|', ParserGetIntValueByKeyByHandle(qmSmUi, 'nmexcl')+1, qmSmText);
-   qmSmText := 'Slot: '+qmSmText;
+   qmSmText := qmT('Slot: %1', qmSmText);
    qmSmButton('bnmslot', qmSmNWnd2, gc_halParentLeft, gc_valParentTop, 260, 175, qmSmText, qmTagNmSlot, True);
-   qmSmButton('bnmcreate', qmSmNWnd2, gc_halParentMiddle, gc_valParentBottomHeight, -110, -28, 'Create', qmTagNmCreate, ParserGetValueByKeyByHandle(qmSmUi, 'nmfolder')<>'');
-   qmSmButton('bnmcancel', qmSmNWnd2, gc_halParentMiddle, gc_valParentBottomHeight, 110, -28, 'Cancel', qmTagNmCancel, True);
+   qmSmButton('bnmcreate', qmSmNWnd2, gc_halParentMiddle, gc_valParentBottomHeight, -110, -28, qmT('Create'), qmTagNmCreate, ParserGetValueByKeyByHandle(qmSmUi, 'nmfolder')<>'');
+   qmSmButton('bnmcancel', qmSmNWnd2, gc_halParentMiddle, gc_valParentBottomHeight, 110, -28, qmT('Cancel'), qmTagNmCancel, True);
 end;
 
 // the start-up guard's notice, over the window (mode 3; qmUiAct gdl<k>)
@@ -1079,17 +1085,19 @@ begin
    // failed-*, 0.1.3). A mod switched off after a failed start need not be
    // new, so neither text calls it so.
    var qmSmGFail : Boolean = (SubStr(ParserGetValueByKeyByHandle(qmSmUi, 'gdwhy'), 1, 7)='failed-');
-   qmSmText := 'Each of them replaces a core script that another active mod replaces too, and they have not started together before. With both, the game may stop at "Error compiling scripts", so Quartermaster switched these mods off and restarted the game:';
+   qmSmText := qmT('Each of them replaces a core script that another active mod replaces too, and they have not started together before. With both, the game may stop at "Error compiling scripts", so Quartermaster switched these mods off and restarted the game:');
    if (qmSmGFail) then
-   qmSmText := 'The last start did not reach the main menu: it stopped at "Error compiling scripts", or the menu did not compile. To get the game running again, Quartermaster switched these mods off and restarted it:';
-   var qmSmGWhy : String = GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmText, 720);
+   qmSmText := qmT('The last start did not reach the main menu: it stopped at "Error compiling scripts", or the menu did not compile. To get the game running again, Quartermaster switched these mods off and restarted it:');
+   var qmSmGWhy : String;
+   qmWrap(gc_font_serif_13, qmSmText, 720, qmSmGWhy);
    // The line under the list: a clashing pair still runs when the player
    // activates it in this window (the Apply's chosen.cfg, qmOrder: the guard
    // trusts that set for one start and switches back if it stops).
-   qmSmText := 'If they do work together, activate them here: Quartermaster lets them start once and switches back if the game does not start.';
+   qmSmText := qmT('If they do work together, activate them here: Quartermaster lets them start once and switches back if the game does not start.');
    if (qmSmGFail) then
-   qmSmText := 'Activate them again here one at a time to find the one that stops the start.';
-   var qmSmGEnd : String = GetGUIWrappedTextByFont(gUIConst.font[gc_font_serif_13], qmSmText, 720);
+   qmSmText := qmT('Activate them again here one at a time to find the one that stops the start.');
+   var qmSmGEnd : String;
+   qmWrap(gc_font_serif_13, qmSmText, 720, qmSmGEnd);
    // Both texts wrap at the body's width and are measured as the message line
    // is; the list goes under the first, the second under the list, and the
    // window takes their height, so the OK button stays clear of a line under
@@ -1098,14 +1106,14 @@ begin
    var qmSmGTw : Integer;
    var qmSmGWh : Integer;
    var qmSmGEh : Integer;
-   GetGUIElementFontTextFormatRect(gUIConst.font[gc_font_serif_13], qmSmGWhy, qmSmGTw, qmSmGWh);
-   GetGUIElementFontTextFormatRect(gUIConst.font[gc_font_serif_13], qmSmGEnd, qmSmGTw, qmSmGEh);
+   qmRectF(gc_font_serif_13, qmSmGWhy, qmSmGTw, qmSmGWh);
+   qmRectF(gc_font_serif_13, qmSmGEnd, qmSmGTw, qmSmGEh);
    var qmSmGListY : Integer = 62+qmSmGWh+12;
    var qmSmGEndY : Integer = qmSmGListY+qmSmGn*qmSmLh+4+16;
    var qmSmGWnd : Integer = _gui_CreateSkinWindow('gwnd', qmSmGNote, gc_halParentMiddle, gc_valParentMiddle, 0, 0, 820, qmSmGEndY+qmSmGEh+4+70, 1, qmSmBupdate);
-   qmSmText := 'Quartermaster switched off clashing mods';
+   qmSmText := qmT('Quartermaster switched off clashing mods');
    if (qmSmGFail) then
-   qmSmText := 'Quartermaster switched mods off';
+   qmSmText := qmT('Quartermaster switched mods off');
    _gui_CreateText('gtext', qmSmGWnd, qmSmText, gc_halParentMiddle, gc_valParentTop, 0, 34, 0, 0, gc_halMiddle, gc_valMiddle, gc_font_serif_16, qmSmHeadColor, qmSmBupdate);
    _gui_CreateText('gwhy', qmSmGWnd, qmSmGWhy, gc_halParentLeft, gc_valParentTop, 50, 62, 720, qmSmGWh+4, gc_halLeft, gc_valTop, gc_font_serif_13, qmSmColor, qmSmBupdate);
    qmSmBody := '';

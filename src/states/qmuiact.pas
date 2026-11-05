@@ -177,7 +177,7 @@ begin
    for qmUkJ:=0 to ParserGetIntValueByKeyByHandle(qmUkUi, 'optn')-1 do
    if (qmUkJ<>qmUkK) and (ParserGetValueByKeyByHandle(qmUkUi, 'oty'+IntToStr(qmUkJ))='key') and SameText(ParserGetValueByKeyByHandle(qmUkUi, 'ov'+IntToStr(qmUkJ)), qmUkKey) then
    begin
-      qmUkWhy := 'it is '+ParserGetValueByKeyByHandle(qmUkUi, 'olb'+IntToStr(qmUkJ))+' already';
+      qmUkWhy := qmT('it is %1 already', ParserGetValueByKeyByHandle(qmUkUi, 'olb'+IntToStr(qmUkJ)));
       exit;
    end;
    if (qmUkAb<>0) and (qmUkSet<>0) then
@@ -193,7 +193,7 @@ begin
          begin
             qmUkV := ParserGetValueByKeyByHandle(qmUkCh, ParserGetValueByKeyByHandle(qmUkAb, 'sid'+qmUkSk));
             if SameText(qmUkV, qmUkKey) and (qmUkWhy='') then
-            qmUkWhy := ParserGetValueByKeyByHandle(qmUkUi, 'name'+IntToStr(qmUkI))+' uses it for '+ParserGetValueByKeyByHandle(qmUkAb, 'slb'+qmUkSk);
+            qmUkWhy := qmT('%1 uses it for %2', ParserGetValueByKeyByHandle(qmUkUi, 'name'+IntToStr(qmUkI)), ParserGetValueByKeyByHandle(qmUkAb, 'slb'+qmUkSk));
          end;
       end;
    end;
@@ -215,7 +215,7 @@ if (ParserGetIntValueByKeyByHandle(qmUaUi, 'trpend')=1) then
 if (qmUaCmd='activate') or (qmUaCmd='deactivate') or (qmUaCmd='up') or (qmUaCmd='down') or (qmUaCmd='move') or (qmUaCmd='apply') or (qmUaCmd='autosort') or (qmUaCmd='confirm') then
 begin
    // The message while the activation check runs.
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Still checking the last change; a moment.');
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Still checking the last change; a moment.'));
    //! The check runs on the next frame, or from the window when no frame
    //! ticks (qmPump): one still unanswered five seconds after it was asked
    //! did not run at all, and the window says so instead of "a moment" for
@@ -226,7 +226,7 @@ begin
    qmUaWait := Floor(_misc_GetRealTime*10)-ParserGetIntValueByKeyByHandle(qmUaWrt, 'trat');
    if (qmUaWait>=50) then
    // The message when the activation check never ran.
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'The check did not run: the game is not running Quartermaster''s part of the main menu. Close the game and start it again; nothing was changed.');
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('The check did not run: the game is not running Quartermaster''s part of the main menu. Close the game and start it again; nothing was changed.'));
    qmLog('ui '+qmUaCmd+' waits: the activation check runs, asked '+IntToStr(qmUaWait)+' tenths ago');
    qmUaCmd := '';
    qmUaDone := True;
@@ -248,22 +248,22 @@ begin
       begin
          ParserSetIntValueByKeyByHandle(qmUaUi, 'pe'+qmUaS, 0);
          ParserSetIntValueByKeyByHandle(qmUaUi, 'side', 0);
-         ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Not activated: '+ParserGetValueByKeyByHandle(qmUaUi, 'tr0')+'.');
+         ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Not activated: %1.', ParserGetValueByKeyByHandle(qmUaUi, 'tr0')));
          qmLog('ui activate refused row='+qmUaS+' by the check: '+ParserGetValueByKeyByHandle(qmUaUi, 'tr0'));
       end
       else
       if (qmUaTst='WARN') then
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Activated. Note: '+ParserGetValueByKeyByHandle(qmUaUi, 'tr0')+'.')
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Activated. Note: %1.', ParserGetValueByKeyByHandle(qmUaUi, 'tr0')))
       else
       if (qmUaTst='SKIP') then
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Activated without the check: '+ParserGetValueByKeyByHandle(qmUaUi, 'tr0')+'.')
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Activated without the check: %1.', ParserGetValueByKeyByHandle(qmUaUi, 'tr0')))
       else
       //! What only a start with the mod's own scripts can judge (qmTrial
       //! trlater) is said, and is no warning.
       if (ParserGetIntValueByKeyByHandle(qmUaUi, 'trlater')>0) then
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Checked: '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+qmUaS)+' works with the active mods. '+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'trlater'))+' of its files use its own scripts and are checked when the game restarts.')
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Checked: %1 works with the active mods. %2 of its files use its own scripts and are checked when the game restarts.', ParserGetValueByKeyByHandle(qmUaUi, 'name'+qmUaS), IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'trlater'))))
       else
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Checked: '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+qmUaS)+' works with the active mods.');
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Checked: %1 works with the active mods.', ParserGetValueByKeyByHandle(qmUaUi, 'name'+qmUaS)));
       //! The check's word for the row (tck<i>): ShowQmManager shows OK or WARN
       //! beside the row's + until Apply, instead of PENDING (since
       //! 2026-10-01); none for a SKIP or a refused row. A new load order
@@ -406,7 +406,7 @@ begin
             if (ParserGetValueByKeyByHandle(qmUaGl, 'gdf'+qmUaS)='') then
             ParserSetValueByKeyByHandle(qmUaUi, 'gdl'+qmUaS, ParserGetValueByKeyByHandle(qmUaGl, 'gdt'+qmUaS))
             else
-            ParserSetValueByKeyByHandle(qmUaUi, 'gdl'+qmUaS, ParserGetValueByKeyByHandle(qmUaGl, 'gdt'+qmUaS)+' - ships '+qmUaGp+', like '+ParserGetValueByKeyByHandle(qmUaGl, 'gdo'+qmUaS));
+            ParserSetValueByKeyByHandle(qmUaUi, 'gdl'+qmUaS, qmT('%1 - ships %2, like %3', ParserGetValueByKeyByHandle(qmUaGl, 'gdt'+qmUaS), qmUaGp, ParserGetValueByKeyByHandle(qmUaGl, 'gdo'+qmUaS)));
             ParserSetIntValueByKeyByHandle(qmUaUi, 'gdln', qmUaK+1);
          end;
          ParserSetValueByKeyByHandle(qmUaUi, 'gdwhy', ParserGetValueByKeyByHandle(qmUaGl, 'gdwhy'));
@@ -435,14 +435,14 @@ begin
    qmUaDone := True;
    // The hints of activate and deactivate.
    if (qmUaSel<0) or (qmUaSel>=qmUaN) then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Select a mod first.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Select a mod first.'))
    else
    begin
       qmUaS := IntToStr(qmUaSel);
       if (qmUaCmd='activate') then
       begin
          if (ParserGetIntValueByKeyByHandle(qmUaUi, 'pe'+qmUaS)=1) then
-         ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'This mod is active already.')
+         ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('This mod is active already.'))
          else
          begin
             ParserSetIntValueByKeyByHandle(qmUaUi, 'pe'+qmUaS, 1);
@@ -464,7 +464,7 @@ begin
                ParserSetIntValueByKeyByHandle(qmUaUi, 'pe'+qmUaS, 0);
                ParserSetIntValueByKeyByHandle(qmUaUi, 'side', 0);
                // The message of a refused activation.
-               ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Not activated: '+qmUaBlk+'.');
+               ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Not activated: %1.', qmUaBlk));
                qmLog('ui activate refused row='+qmUaS+': '+qmUaBlk);
             end
             else
@@ -473,7 +473,7 @@ begin
             if qmUaTrialAsk(qmUaSel) then
             begin
                // The message while the activation check runs.
-               ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Checking '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+qmUaS)+' with the active mods...');
+               ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Checking %1 with the active mods...', ParserGetValueByKeyByHandle(qmUaUi, 'name'+qmUaS)));
                qmLog('ui activate row='+qmUaS+': the activation check is asked');
             end;
          end;
@@ -483,10 +483,10 @@ begin
          // Quartermaster is switched off where the player switched it on,
          // in the game's own mod list (plan S1: the rescue is one click there).
          if (qmUaSel=qmUaSelf) then
-         ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Quartermaster cannot switch itself off here; use the game''s own Mod Manager (modman.exe).')
+         ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Quartermaster cannot switch itself off here; use the game''s own Mod Manager (modman.exe).'))
          else
          if (ParserGetIntValueByKeyByHandle(qmUaUi, 'pe'+qmUaS)=0) then
-         ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'This mod is not active.')
+         ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('This mod is not active.'))
          else
          begin
             ParserSetIntValueByKeyByHandle(qmUaUi, 'pe'+qmUaS, 0);
@@ -540,13 +540,13 @@ begin
    qmUaSig(qmUaSigNow);
    var qmUaChecked : Boolean = (ParserGetIntValueByKeyByHandle(qmUaUi, 'trrow')=-1) and (ParserGetValueByKeyByHandle(qmUaUi, 'trsig')=qmUaSigNow) and (ParserGetValueByKeyByHandle(qmUaUi, 'trst')<>'');
    if (qmUaChg=0) and (ParserGetIntValueByKeyByHandle(qmUaUi, 'ordchg')<>1) then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Nothing to apply.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Nothing to apply.'))
    else
    if (qmUaNewOn>0) and (not qmUaChecked) and qmUaTrialAsk(-1) then
    begin
       ParserSetIntValueByKeyByHandle(qmUaUi, 'trapply', 1);
       // The message while the activation check runs.
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Checking the mods Apply switches on...');
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Checking the mods Apply switches on...'));
       qmLog('ui apply waits for the activation check of '+IntToStr(qmUaNewOn)+' mod(s)');
    end
    else
@@ -592,17 +592,17 @@ begin
       end;
       // A global-script clash of the pending set is asked about (pc<k>).
       for qmUaK:=0 to ParserGetIntValueByKeyByHandle(qmUaUi, 'pcn')-1 do
-      qmUaConf('Note: '+ParserGetValueByKeyByHandle(qmUaUi, 'pc'+IntToStr(qmUaK))+'; if the game does not start with both, Quartermaster switches back at the next start.');
+      qmUaConf(qmT('Note: %1; if the game does not start with both, Quartermaster switches back at the next start.', ParserGetValueByKeyByHandle(qmUaUi, 'pc'+IntToStr(qmUaK))));
       // An about.cfg WARN of the pending set is asked about, not refused: it
       // goes into the dialog's list (M8 task 4: WARN asks for confirmation).
       // The prefix of a warning line.
       for qmUaK:=0 to ParserGetIntValueByKeyByHandle(qmUaUi, 'pan')-1 do
       if (ParserGetValueByKeyByHandle(qmUaUi, 'pat'+IntToStr(qmUaK))='WARN') then
-      qmUaConf('Note: '+ParserGetValueByKeyByHandle(qmUaUi, 'pa'+IntToStr(qmUaK)));
+      qmUaConf(qmT('Note: %1', ParserGetValueByKeyByHandle(qmUaUi, 'pa'+IntToStr(qmUaK))));
       if (qmUaChecked) then
       for qmUaK:=0 to ParserGetIntValueByKeyByHandle(qmUaUi, 'trn')-1 do
       if (ParserGetValueByKeyByHandle(qmUaUi, 'trt'+IntToStr(qmUaK))='WARN') then
-      qmUaConf('Note: '+ParserGetValueByKeyByHandle(qmUaUi, 'tr'+IntToStr(qmUaK)));
+      qmUaConf(qmT('Note: %1', ParserGetValueByKeyByHandle(qmUaUi, 'tr'+IntToStr(qmUaK))));
       // The load order after Apply, always: it is the second column.
       qmUaPlace := 0;
       for qmUaK:=0 to qmUaN-1 do
@@ -617,13 +617,13 @@ begin
       qmUaCn := ParserGetIntValueByKeyByHandle(qmUaUi, 'confn');
       if (qmUaCn>qmUaConfMax) then
       begin
-         ParserSetValueByKeyByHandle(qmUaUi, 'conf'+IntToStr(qmUaConfMax-1), '... and '+IntToStr(qmUaCn-qmUaConfMax+1)+' more');
+         ParserSetValueByKeyByHandle(qmUaUi, 'conf'+IntToStr(qmUaConfMax-1), qmT('... and %1 more', IntToStr(qmUaCn-qmUaConfMax+1)));
          ParserSetIntValueByKeyByHandle(qmUaUi, 'confn', qmUaConfMax);
       end;
       qmUaCn := ParserGetIntValueByKeyByHandle(qmUaUi, 'confon');
       if (qmUaCn>qmUaConfMax) then
       begin
-         ParserSetValueByKeyByHandle(qmUaUi, 'confo'+IntToStr(qmUaConfMax-1), '... and '+IntToStr(qmUaCn-qmUaConfMax+1)+' more');
+         ParserSetValueByKeyByHandle(qmUaUi, 'confo'+IntToStr(qmUaConfMax-1), qmT('... and %1 more', IntToStr(qmUaCn-qmUaConfMax+1)));
          ParserSetIntValueByKeyByHandle(qmUaUi, 'confon', qmUaConfMax);
       end;
    end;
@@ -637,7 +637,7 @@ begin
       ParserSetIntValueByKeyByHandle(qmUaUi, 'mode', 0);
       // The message of a refused Apply (about.cfg rules and the activation
       // check only since 0.1.3).
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Not applied: first fix what the list showed.');
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Not applied: first fix what the list showed.'));
       qmLog('ui confirm refused: '+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'confblk'))+' problem(s), rules='+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'confbrule')));
    end
    else
@@ -658,7 +658,7 @@ begin
    qmUaDone := True;
    ParserSetIntValueByKeyByHandle(qmUaUi, 'mode', 0);
    // Message after the confirm dialog was cancelled.
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Apply cancelled.');
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Apply cancelled.'));
    qmLog('ui cancel');
 end;
 //! The filter follows every keystroke (EventQmManager sends it on a key's
@@ -733,13 +733,13 @@ begin
    qmUaNtaken := True;
    // The messages of Create mod in the window.
    if (qmUaNf='') then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Type a name with at least one letter.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Type a name with at least one letter.'))
    else
    if (qmUaNtaken) then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'mods\'+qmUaNf+' is a mod already; choose another name.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('%1 is a mod already; choose another name.', 'mods\'+qmUaNf))
    else
    if (qmUaNrt=0) then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Quartermaster did not start here; nothing can be created.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Quartermaster did not start here; nothing can be created.'))
    else
    begin
       ParserSetValueByKeyByHandle(qmUaNrt, 'mffolder', qmUaNf);
@@ -753,7 +753,7 @@ begin
       ParserSetValueByKeyByHandle(qmUaNrt, 'mfreq', 'new');
       ParserSetIntValueByKeyByHandle(qmUaUi, 'mode', 0);
       ParserSetValueByKeyByHandle(qmUaUi, 'typed', ParserGetValueByKeyByHandle(qmUaUi, 'filter'));
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Creating mods\'+qmUaNf+'...');
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Creating %1...', 'mods\'+qmUaNf));
       qmLog('ui new mod asked folder='+qmUaNf+' type='+ParserGetValueByKeyByHandle(qmUaNrt, 'mftype')+' slot='+qmUaNs);
    end;
 end;
@@ -810,10 +810,10 @@ begin
    qmUaDone := True;
    // The messages of the Mod files view.
    if (qmUaSel<0) or (qmUaSel>=qmUaN) then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Select a local mod first.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Select a local mod first.'))
    else
    if (ParserGetValueByKeyByHandle(qmUaUi, 'org'+IntToStr(qmUaSel))<>'Local') and (ParserGetValueByKeyByHandle(qmUaUi, 'org'+IntToStr(qmUaSel))<>'Local copy') then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Only a local mod (a folder in mods\) can be edited here.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Only a local mod (a folder in %1) can be edited here.', 'mods\'))
    else
    begin
       ParserSetIntValueByKeyByHandle(qmUaUi, 'panel', 3);
@@ -864,12 +864,12 @@ begin
    var qmUaMdis, qmUaMacc, qmUaMban, qmUaMroot : Boolean;
    // The messages of Create about.cfg and Copy into mod.
    if (qmUaMrt=0) or (ParserGetIntValueByKeyByHandle(qmUaUi, 'panel')<>3) then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Quartermaster did not start here; nothing can be written.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Quartermaster did not start here; nothing can be written.'))
    else
    if (qmUaCmd='mfabout') then
    begin
       if (ParserGetIntValueByKeyByHandle(qmUaUi, 'mfhas')=1) then
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'This mod has an about.cfg already.')
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('This mod has an about.cfg already.'))
       else
       begin
          ModLibraryGetData(qmUaMrow, qmUaMtag, qmUaMd, qmUaMlast, qmUaMtit, qmUaMown, qmUaMdesc, qmUaMtags, qmUaMurl, qmUaMnote, qmUaMnumf, qmUaMvis, qmUaMdis, qmUaMacc, qmUaMban, qmUaMroot);
@@ -881,13 +881,13 @@ begin
          ParserSetIntValueByKeyByHandle(qmUaMrt, 'mfcam', 1);
          ParserSetValueByKeyByHandle(qmUaMrt, 'mfreq', 'about');
          ParserSetIntValueByKeyByHandle(qmUaUi, 'mfhas', 1);
-         ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Writing about.cfg...');
+         ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Writing about.cfg...'));
       end;
    end
    else
    begin
       if (ParserGetIntValueByKeyByHandle(qmUaUi, 'vsel')<0) then
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Pick a game file in the list first.')
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Pick a game file in the list first.'))
       else
       begin
          ParserSetValueByKeyByHandle(qmUaMrt, 'mfdir', qmUaMdir);
@@ -917,7 +917,7 @@ begin
          qmUaText := SubStr(qmUaText, 1, ParserGetIntValueByKeyByHandle(qmUaUi, 'omx'+qmUaS));
          ParserSetValueByKeyByHandle(qmUaUi, 'typed', qmUaText);
          // The message of a text cut to its length.
-         ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'At most '+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'omx'+qmUaS))+' characters.');
+         ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('At most %1 characters.', IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'omx'+qmUaS))));
       end;
       ParserSetValueByKeyByHandle(qmUaUi, 'ov'+qmUaS, qmUaText);
       qmLog('ui option text '+ParserGetValueByKeyByHandle(qmUaUi, 'oid'+qmUaS)+' ['+qmUaText+']');
@@ -1044,10 +1044,10 @@ begin
    var qmUaOab : Integer = ParserSelectByKey('qm_about');
    // The messages of the Options view.
    if (qmUaSel<0) or (qmUaSel>=qmUaN) then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Select a mod first.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Select a mod first.'))
    else
    if (ParserGetIntValueByKeyByHandle(qmUaUi, 'abok')<>1) or (ParserGetIntValueByKeyByHandle(qmUaUi, 'abs'+IntToStr(qmUaSel))=0) or (qmUaOab=0) then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'This mod has no settings.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('This mod has no settings.'))
    else
    begin
       qmUaS := IntToStr(qmUaSel);
@@ -1257,13 +1257,13 @@ begin
       if (qmUaOty='key') then
       begin
          ParserSetIntValueByKeyByHandle(qmUaUi, 'optcap', qmUaK);
-         ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Press a key for '+ParserGetValueByKeyByHandle(qmUaUi, 'olb'+qmUaS)+'; Esc keeps the old one.');
+         ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Press a key for %1; Esc keeps the old one.', ParserGetValueByKeyByHandle(qmUaUi, 'olb'+qmUaS)));
       end;
       if (qmUaOty='text') then
       begin
          ParserSetIntValueByKeyByHandle(qmUaUi, 'optsel', qmUaK);
          ParserSetValueByKeyByHandle(qmUaUi, 'typed', qmUaOval);
-         ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Type the new text in the box; Accept keeps it.');
+         ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Type the new text in the box; Accept keeps it.'));
       end;
       ParserSetValueByKeyByHandle(qmUaUi, 'ov'+qmUaS, qmUaOval);
       qmLog('ui option '+ParserGetValueByKeyByHandle(qmUaUi, 'oid'+qmUaS)+' '+qmUaOty+' action='+IntToStr(qmUaOact)+' value=['+qmUaOval+']');
@@ -1280,13 +1280,13 @@ begin
       qmUaS := IntToStr(qmUaK);
       var qmUaKwhy : String = '';
       if (qmUaText='') then
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Key not changed.')
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Key not changed.'))
       else
       begin
          qmUaKeyCheck(qmUaText, qmUaK, qmUaKwhy);
          if (qmUaKwhy<>'') then
          begin
-            ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Key '+qmUaText+' not taken: '+qmUaKwhy+'.');
+            ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Key %1 not taken: %2.', qmUaText, qmUaKwhy));
             qmLog('ui option key '+qmUaText+' refused for '+ParserGetValueByKeyByHandle(qmUaUi, 'oid'+qmUaS)+': '+qmUaKwhy);
          end
          else
@@ -1306,7 +1306,7 @@ begin
    ParserSetValueByKeyByHandle(qmUaUi, 'ov'+IntToStr(qmUaK), ParserGetValueByKeyByHandle(qmUaUi, 'odf'+IntToStr(qmUaK)));
    ParserSetIntValueByKeyByHandle(qmUaUi, 'optcap', -1);
    ParserSetIntValueByKeyByHandle(qmUaUi, 'optsel', -1);
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Defaults set; Accept keeps them.');
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Defaults set; Accept keeps them.'));
 end;
 if (qmUaCmd='optcancel') then
 begin
@@ -1315,7 +1315,7 @@ begin
    ParserSetIntValueByKeyByHandle(qmUaUi, 'optcap', -1);
    ParserSetIntValueByKeyByHandle(qmUaUi, 'optsel', -1);
    ParserSetValueByKeyByHandle(qmUaUi, 'typed', ParserGetValueByKeyByHandle(qmUaUi, 'filter'));
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Options not changed.');
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Options not changed.'));
    qmLog('ui options cancelled');
 end;
 // The messages of the Options view.
@@ -1330,9 +1330,9 @@ begin
    if (ParserGetValueByKeyByHandle(qmUaUi, 'oty'+IntToStr(qmUaK))='key') then
    for qmUaAj:=qmUaK+1 to ParserGetIntValueByKeyByHandle(qmUaUi, 'optn')-1 do
    if (ParserGetValueByKeyByHandle(qmUaUi, 'oty'+IntToStr(qmUaAj))='key') and SameText(ParserGetValueByKeyByHandle(qmUaUi, 'ov'+IntToStr(qmUaK)), ParserGetValueByKeyByHandle(qmUaUi, 'ov'+IntToStr(qmUaAj))) and (qmUaAdup='') then
-   qmUaAdup := ParserGetValueByKeyByHandle(qmUaUi, 'olb'+IntToStr(qmUaK))+' and '+ParserGetValueByKeyByHandle(qmUaUi, 'olb'+IntToStr(qmUaAj))+' are both '+ParserGetValueByKeyByHandle(qmUaUi, 'ov'+IntToStr(qmUaK));
+   qmUaAdup := qmT('%1 and %2 are both %3', ParserGetValueByKeyByHandle(qmUaUi, 'olb'+IntToStr(qmUaK)), ParserGetValueByKeyByHandle(qmUaUi, 'olb'+IntToStr(qmUaAj)), ParserGetValueByKeyByHandle(qmUaUi, 'ov'+IntToStr(qmUaK)));
    if (qmUaAdup<>'') then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Not saved: '+qmUaAdup+'.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Not saved: %1.', qmUaAdup))
    else
    begin
       var qmUaSp : Integer = ParserSelectByKey('qm_settings');
@@ -1378,9 +1378,9 @@ begin
       ParserSetIntValueByKeyByHandle(qmUaUi, 'optsaves', ParserGetIntValueByKeyByHandle(qmUaUi, 'optsaves')+1);
       // The messages of the Options view.
       if (qmUaSaved) then
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Options saved: '+IntToStr(qmUaChanged)+' changed.')
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Options saved: %1 changed.', IntToStr(qmUaChanged)))
       else
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Options kept for this session only: Quartermaster did not start here.');
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Options kept for this session only: Quartermaster did not start here.'));
       qmLog('ui options saved mod='+ParserGetValueByKeyByHandle(qmUaUi, 'optmid')+' changed='+IntToStr(qmUaChanged)+' keys='+IntToStr(qmUaKeys)+' file='+BoolToStr(qmUaSaved));
    end;
 end;
@@ -1397,7 +1397,7 @@ begin
    qmUaDone := True;
    // The messages of Auto-sort.
    if (ParserGetIntValueByKeyByHandle(qmUaUi, 'hascanon')<>1) then
-   ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'The standard load order is not available right now.')
+   ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('The standard load order is not available right now.'))
    else
    begin
       qmUaChg := 0;
@@ -1408,7 +1408,7 @@ begin
          qmUaChg := 1;
       end;
       ParserSetIntValueByKeyByHandle(qmUaUi, 'ordchg', qmUaChg);
-      ParserSetValueByKeyByHandle(qmUaUi, 'msg', 'Load order sorted: required mods first, then the standard order.');
+      ParserSetValueByKeyByHandle(qmUaUi, 'msg', qmT('Load order sorted: required mods first, then the standard order.'));
    end;
    qmLog('ui autosort ordchg='+IntToStr(ParserGetIntValueByKeyByHandle(qmUaUi, 'ordchg')));
 end;
@@ -1461,9 +1461,9 @@ begin
    begin
       qmGlobPath(qmUaF, qmUaP);
       // The clash lines.
-      ParserSetValueByKeyByHandle(qmUaUi, 'pc'+IntToStr(qmUaPn), ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaA))+' and '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaB))+' both replace '+qmUaP);
-      ParserSetValueByKeyByHandle(qmUaUi, 'pcl'+IntToStr(qmUaA), 'It may clash with '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaB))+': both replace '+qmUaP+'. If the game does not start with both, Quartermaster switches back.');
-      ParserSetValueByKeyByHandle(qmUaUi, 'pcl'+IntToStr(qmUaB), 'It may clash with '+ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaA))+': both replace '+qmUaP+'. If the game does not start with both, Quartermaster switches back.');
+      ParserSetValueByKeyByHandle(qmUaUi, 'pc'+IntToStr(qmUaPn), qmT('%1 and %2 both replace %3', ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaA)), ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaB)), qmUaP));
+      ParserSetValueByKeyByHandle(qmUaUi, 'pcl'+IntToStr(qmUaA), qmT('It may clash with %1: both replace %2. If the game does not start with both, Quartermaster switches back.', ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaB)), qmUaP));
+      ParserSetValueByKeyByHandle(qmUaUi, 'pcl'+IntToStr(qmUaB), qmT('It may clash with %1: both replace %2. If the game does not start with both, Quartermaster switches back.', ParserGetValueByKeyByHandle(qmUaUi, 'name'+IntToStr(qmUaA)), qmUaP));
       qmUaPn := qmUaPn+1;
    end;
 end;

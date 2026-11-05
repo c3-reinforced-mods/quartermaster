@@ -39,12 +39,12 @@ var qmUdPe : Integer = ParserGetIntValueByKeyByHandle(qmUdUi, 'pe'+qmUdS);
 // The hint shown while nothing is selected, and the wording of
 // the Details line.
 if (qmUdSel<0) or (qmUdSel>=ParserGetIntValueByKeyByHandle(qmUdUi, 'n')) then
-qmUdLine := 'Select a mod to see how it loads.'
+qmUdLine := qmT('Select a mod to see how it loads.')
 else
 begin
    qmUdLine := ParserGetValueByKeyByHandle(qmUdUi, 'name'+qmUdS)+' - ';
    if (qmUdEn=0) and (ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS)<>'') then
-   qmUdLine := qmUdLine+'inactive: '+ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS)
+   qmUdLine := qmUdLine+qmT('inactive: %1', ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS))
    else
    if (qmUdEn=0) then
    qmUdLine := qmUdLine+'inactive'
@@ -56,21 +56,21 @@ begin
    qmUdLine := qmUdLine+qmUdSt+': '+ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS)
    else
    if (qmUdSrc='report') and (qmUdSt='NEW') then
-   qmUdLine := qmUdLine+'NEW: a new mod; '+ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS)
+   qmUdLine := qmUdLine+'NEW: '+qmT('a new mod; %1', ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS))
    else
    if (qmUdSrc='report') then
    qmUdLine := qmUdLine+qmUdSt+': '+ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS)
    else
    if (qmUdSrc='index') then
-   qmUdLine := qmUdLine+'OK: loads as it is: it ships none of the files Quartermaster merges'
+   qmUdLine := qmUdLine+'OK: '+qmT('loads as it is: it ships none of the files Quartermaster merges')
    else
-   qmUdLine := qmUdLine+'?: no report for this mod yet; the next start with it generates one';
+   qmUdLine := qmUdLine+'?: '+qmT('no report for this mod yet; the next start with it generates one');
    if (qmUdSel=ParserGetIntValueByKeyByHandle(qmUdUi, 'self')) then
-   qmUdLine := qmUdLine+' (Quartermaster itself)';
+   qmUdLine := qmUdLine+' ('+qmT('Quartermaster itself')+')';
    if (qmUdPe>qmUdEn) then
-   qmUdAdd('Apply activates it.');
+   qmUdAdd(qmT('Apply activates it.'));
    if (qmUdPe<qmUdEn) then
-   qmUdAdd('Apply deactivates it.');
+   qmUdAdd(qmT('Apply deactivates it.'));
    // What the conflict report says of it (qmUiModel cpd<i>, qmConflicts):
    // the file it is left out of, or whom it loses or wins conflicts against.
    if (qmUdEn=1) and (ParserGetValueByKeyByHandle(qmUdUi, 'cpd'+qmUdS)<>'') then
@@ -81,10 +81,10 @@ begin
    // The pending set's first about.cfg problem of this row (qmUiAct pal<i>),
    // unless the status already says it.
    if (ParserGetValueByKeyByHandle(qmUdUi, 'pal'+qmUdS)<>'') and (ParserGetValueByKeyByHandle(qmUdUi, 'pal'+qmUdS)<>qmUdSt+': '+ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS)+'.') then
-   qmUdAdd('Pending: '+ParserGetValueByKeyByHandle(qmUdUi, 'pal'+qmUdS));
+   qmUdAdd(qmT('Pending: %1', ParserGetValueByKeyByHandle(qmUdUi, 'pal'+qmUdS)));
    // Settings the mod declares (M10): the Options button opens them.
    if (ParserGetIntValueByKeyByHandle(qmUdUi, 'abs'+qmUdS)>0) then
-   qmUdAdd('It has '+IntToStr(ParserGetIntValueByKeyByHandle(qmUdUi, 'abs'+qmUdS))+' setting(s): Options.');
+   qmUdAdd(qmT('It has %1 setting(s): Options.', IntToStr(ParserGetIntValueByKeyByHandle(qmUdUi, 'abs'+qmUdS))));
 end;
 ParserSetValueByKeyByHandle(qmUdUi, 'd0', qmUdLine);
 ParserSetIntValueByKeyByHandle(qmUdUi, 'dn', 1);

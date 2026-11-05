@@ -74,9 +74,9 @@ begin
    qmMfRes := qmWrNewMod(qmMfF, qmMfIni, qmMfAb, qmMfRd);
    // The messages of Create mod.
    if (qmMfRes=1) then
-   qmMfMsg := 'Created mods\'+qmMfF+'. It is in the list after you restart the game: the game looks for new mod folders only when it starts.'
+   qmMfMsg := qmT('Created %1. It is in the list after you restart the game: the game looks for new mod folders only when it starts.', 'mods\'+qmMfF)
    else
-   qmMfMsg := 'mods\'+qmMfF+' was not created: that folder is taken or the name makes none.';
+   qmMfMsg := qmT('%1 was not created: that folder is taken or the name makes none.', 'mods\'+qmMfF);
 end;
 if (qmMfReq='about') then
 begin
@@ -100,9 +100,9 @@ begin
    qmMfRes := qmWrAboutDraft(qmMfDir, qmMfAb);
    // The messages of Create about.cfg.
    if (qmMfRes=1) then
-   qmMfMsg := 'Wrote '+qmMfDir+'\about.cfg - check its values; the next start reads it.'
+   qmMfMsg := qmT('Wrote %1 - check its values; the next start reads it.', qmMfDir+'\about.cfg')
    else
-   qmMfMsg := 'No about.cfg written: '+qmMfDir+' has one already or is not a local mod.';
+   qmMfMsg := qmT('No about.cfg written: %1 has one already or is not a local mod.', qmMfDir);
 end;
 if (qmMfReq='copy') then
 begin
@@ -110,9 +110,9 @@ begin
    qmMfRes := qmWrCopyVanilla(qmMfDir, ParserGetValueByKeyByHandle(qmMfRt, 'mfrel'));
    // The messages of Edit game file.
    if (qmMfRes=1) then
-   qmMfMsg := 'Copied data\'+ParserGetValueByKeyByHandle(qmMfRt, 'mfrel')+' into '+qmMfDir+' - edit it there; the next start loads it.'
+   qmMfMsg := qmT('Copied %1 into %2 - edit it there; the next start loads it.', 'data\'+ParserGetValueByKeyByHandle(qmMfRt, 'mfrel'), qmMfDir)
    else
-   qmMfMsg := 'Not copied: the mod has that file already, or it is not a local mod.';
+   qmMfMsg := qmT('Not copied: the mod has that file already, or it is not a local mod.');
 end;
 ParserSetIntValueByKeyByHandle(qmMfRt, 'mfres', qmMfRes);
 ParserSetIntValueByKeyByHandle(qmMfRt, 'mfdone', ParserGetIntValueByKeyByHandle(qmMfRt, 'mfdone')+1);

@@ -116,6 +116,7 @@ ParserSetIntValueByKeyByHandle(qmBtRt, 'skphase', 1);
 if (not qmBtApply) then
 ParserSetIntValueByKeyByHandle(qmBtRt, 'norestart', qmBtNoRestart);
 StateMachineExecuteState(qmBtCore, 'qmAbout', 0);
+StateMachineExecuteState(qmBtCore, 'qmAboutLoc', 0);
 StateMachineExecuteState(qmBtCore, 'qmSettings', 0);
 StateMachineExecuteState(qmBtCore, 'qmModList', 0);
 StateMachineExecuteState(qmBtCore, 'qmOrder', 0);

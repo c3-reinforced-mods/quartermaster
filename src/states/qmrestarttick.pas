@@ -102,7 +102,7 @@ begin
    var qmTkBtn : Integer = GetGUIElementIndexByNameParent('MainMenu.col1.row1.wnewgame.bmodman.txtbtn', _gui_GetTop);
    // The main menu button's caption (EventQmManager sets it).
    if (qmTkBtn<>0) then
-   if (GetGUIElementText(qmTkBtn)<>'Mod Manager') then
+   if (GetGUIElementText(qmTkBtn)<>qmTL('Mod Manager')) then
    begin
       ParserSetIntValueByKeyByHandle(qmTkUi, 'rename', 1);
       GUIExecuteState('EventQmManager');

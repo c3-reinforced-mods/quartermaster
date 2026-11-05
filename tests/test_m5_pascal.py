@@ -70,6 +70,21 @@ class IniNode(object):
         self.appended = False
 
 
+TEXT_DIR = b".\\data\\quartermaster\\text\\"
+_TEXTS = {}
+
+
+def text_file(path):
+    """The language files the build makes (docs/localisation.md), for the
+    path qmTextLoad reads: built once for the whole run."""
+    if not (path.startswith(TEXT_DIR) and path.endswith(b".cfg")):
+        return None
+    if not _TEXTS:
+        for rel, data in H.load_texts(H.SRC):
+            _TEXTS[rel.rsplit("/", 1)[1].encode("ascii")] = data
+    return _TEXTS.get(path[len(TEXT_DIR):])
+
+
 class Engine(PAS.Engine):
     def __init__(self, files=None, ages=None, mods=()):
         self.fs = dict(files or {})
@@ -94,7 +109,15 @@ class Engine(PAS.Engine):
     def _file(self, path):
         if path in self.written:
             return self.written[path]
-        return self.fs.get(path)
+        if path in self.fs:
+            return self.fs[path]
+        return text_file(path)
+
+    # the language of the game: the folder of its tables (src/lib/qmtext.pas)
+    locale = b"en"
+
+    def n_GetLocaleTableFileName(self):
+        return b".\\data\\locale\\" + self.locale + b"\\table.lng"
 
     # time, globals, strings
     def n__misc_GetRealTime(self):
@@ -895,7 +918,7 @@ def boot_engine(marker=None, changed=0, mods=None, hook=b"", autotest=None, know
         files[CASES + b"qm_m5_%s.cfg" % name] = b"case\r\n"
     eng = Engine(files, mods=mods)
     load(eng, "qmBoot", "qmMarkerLoad", "qmMarkerSave", "qmModList", "qmOrder", "qmModsIni",
-         "qmKnown", "qmGlobals", "qmGuard", "qmAbout", "qmAbRules", "qmSettings", "qmLastStart",
+         "qmKnown", "qmGlobals", "qmGuard", "qmAbout", "qmAboutLoc", "qmAbRules", "qmSettings", "qmLastStart",
          "qmRestart")
 
     def fingerprint():

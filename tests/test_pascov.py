@@ -24,7 +24,8 @@ def test_every_emitted_line_maps_back_to_its_source_line():
                     sources[path] = [l.rstrip(b"\r") for l in fh.read().split(b"\n")]
             raw = sources[path][n - 1]
             if b"${" not in raw:
-                assert line == raw, (name, path, n)
+                # a text written qmT(...) is emitted as the lookup it stands for
+                assert line == P.H.expand_texts(raw, path), (name, path, n)
 
 
 def test_statement_lines_count_what_does_something():

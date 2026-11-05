@@ -325,17 +325,17 @@ begin
          ParserSetValueByKeyByHandle(qmLsRes, 'owner', qmLsHitOwner);
          ParserSetIntValueByKeyByHandle(qmLsRes, 'lo', qmLsLo);
          ParserSetIntValueByKeyByHandle(qmLsRes, 'hi', qmLsHi);
-         qmLsD := 'The last start stopped at "Error compiling scripts" ('+qmLsText+'): most likely scripts\lib\'+qmLsHit+' of '+qmLsHitOwner+', lines '+IntToStr(qmLsLo)+'-'+IntToStr(qmLsHi);
+         qmLsD := qmT('The last start stopped at "Error compiling scripts" (%1): most likely %2 of %3, lines %4-%5', qmLsText, 'scripts\lib\'+qmLsHit, qmLsHitOwner, IntToStr(qmLsLo), IntToStr(qmLsHi));
          if (qmLsLow<>'') and (qmLsLow<>qmLsHit) then
          begin
             ParserSetValueByKeyByHandle(qmLsRes, 'olib', qmLsLow);
             ParserSetValueByKeyByHandle(qmLsRes, 'oown', qmLsLowOwner);
-            qmLsD := qmLsD+', or the end of scripts\lib\'+qmLsLow+' of '+qmLsLowOwner;
+            qmLsD := qmLsD+qmT(', or the end of %1 of %2', 'scripts\lib\'+qmLsLow, qmLsLowOwner);
          end;
          ParserSetValueByKeyByHandle(qmLsRes, 'line', qmLsD+'.');
       end;
    end;
    if (ParserGetValueByKeyByHandle(qmLsRes, 'line')='') then
-   ParserSetValueByKeyByHandle(qmLsRes, 'line', 'The last start stopped at "Error compiling scripts" ('+qmLsText+'); where in the global scripts is not known.');
+   ParserSetValueByKeyByHandle(qmLsRes, 'line', qmT('The last start stopped at "Error compiling scripts" (%1); where in the global scripts is not known.', qmLsText));
    qmLog('last start: '+qmLsN2+' stopped at framework line '+IntToStr(qmLsN)+' column '+IntToStr(qmLsCol)+': '+ParserGetValueByKeyByHandle(qmLsRes, 'line'));
 end;

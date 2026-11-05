@@ -27,7 +27,7 @@ exit;
 if (qmUpRt=0) then
 begin
    // Message when the boot never ran.
-   ParserSetValueByKeyByHandle(qmUpUi, 'msg', 'Not applied: Quartermaster did not start in this session.');
+   ParserSetValueByKeyByHandle(qmUpUi, 'msg', qmT('Not applied: Quartermaster did not start in this session.'));
    qmLog('ui apply not recorded: qm_rt is missing, the boot has not run');
    exit;
 end;
@@ -45,7 +45,7 @@ end;
 if (qmUpChg=0) and (qmUpOrd<>1) then
 begin
    // Message when there is nothing to apply.
-   ParserSetValueByKeyByHandle(qmUpUi, 'msg', 'Nothing to apply.');
+   ParserSetValueByKeyByHandle(qmUpUi, 'msg', qmT('Nothing to apply.'));
    qmLog('ui apply: no change');
    exit;
 end;
@@ -87,6 +87,6 @@ ParserSetIntValueByKeyByHandle(qmUpUi, 'applies', ParserGetIntValueByKeyByHandle
 // Message after a confirmed Apply. The restart notice shows it
 // until the game closes: qmTick regenerates on the next main-menu frame and
 // restarts a second later.
-ParserSetValueByKeyByHandle(qmUpUi, 'msg', 'Applying the changes: Quartermaster regenerates its files and restarts the game.');
+ParserSetValueByKeyByHandle(qmUpUi, 'msg', qmT('Applying the changes: Quartermaster regenerates its files and restarts the game.'));
 qmLog('ui apply seq='+IntToStr(qmUpSeq)+' changes='+IntToStr(qmUpChg)+' order='+IntToStr(qmUpOrd)+' rows='+IntToStr(qmUpN)+' recorded in qm_rt; qmTick regenerates and restarts');
 qmLog('ui apply order: '+qmUpLine);

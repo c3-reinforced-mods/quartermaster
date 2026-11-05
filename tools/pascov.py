@@ -63,8 +63,11 @@ def units():
     for st in states:
         code = H.state_code(st, helpers, v)
         where = []
-        for name in H.resolve_helpers(st, helpers):
+        names, loads = H.state_text_use(st, helpers, v)
+        for name in names:
             where += origins(helpers[name], H._vars_for(helpers[name], v)) + [None]
+        # the call that loads the language, which the build adds to the body
+        where += [None] if loads else []
         where += origins(st, H._vars_for(st, v))
         out.append((st.name, code, where))
     for hook in H.load_hooks():

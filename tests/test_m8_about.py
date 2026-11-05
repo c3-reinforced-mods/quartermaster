@@ -40,13 +40,18 @@ MODS = [(b"mods\\QMTestWASD", True, b""), (W + b"1325221799", True, b"1325221799
         (b"mods\\Plain", True, b""), (QM, True, b"")]
 
 
-def engine(mods=MODS, files=FILES):
+def engine(mods=MODS, files=FILES, locale=None):
     fs = {QM + b"\\data\\quartermaster\\core.aix": b"x"}
     for d, data in files.items():
         fs[d + b"\\about.cfg"] = data
     eng = PAS5.Engine(fs, mods=mods)
     PAS5.load(eng, "qmAbout")
     PAS5.run(eng, "qmAbout")
+    if locale is not None:
+        # the texts a mod declares for other languages, in the language of the game
+        eng.locale = locale
+        PAS5.load(eng, "qmAboutLoc")
+        PAS5.run(eng, "qmAboutLoc")
     return eng
 
 
@@ -54,11 +59,11 @@ def pipe(items):
     return b"|" + b"|".join(items) + b"|" if items else b""
 
 
-def expected(mods=MODS, files=FILES):
+def expected(mods=MODS, files=FILES, lang=None):
     self_row = max(i for i, (d, on, _t) in enumerate(mods) if on and d == QM)
     rows, abouts = [], []
     for i, (d, on, _t) in enumerate(mods):
-        a = A.parse(files.get(d))
+        a = A.parse(files.get(d), lang)
         abouts.append(a)
         rows.append(A.Row(d, d.rsplit(b"\\", 1)[-1], a, on, i == self_row))
     keys = {b"n": b"%d" % len(mods), b"self": b"%d" % self_row}

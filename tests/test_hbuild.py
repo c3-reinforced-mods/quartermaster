@@ -11,6 +11,7 @@ import shutil
 import pytest
 
 import hbuild
+from ref import lang
 from hbuild import (BuildError, CRLF, DeployError, PREFIX, TemplateError,
                     assemble_aix, assemble_inc, parse_template, render_lines)
 
@@ -589,6 +590,7 @@ def test_quartermaster_builds_with_zero_findings_offline():
                                       "data/quartermaster/hooks/initminimap.inc",
                                       "data/quartermaster/hooks/onlanevent.inc",
                                       "data/quartermaster/selftest.aix",
+                                      ] + ["data/quartermaster/text/%s.cfg" % c for c in sorted(lang.CODES)] + [
                                       "data/quartermaster/ui/eventqmmanager.inc",
                                       "data/quartermaster/ui/showqmmanager.inc",
                                       "data/scripts/resource.script", "mod.ini"]
@@ -597,7 +599,7 @@ def test_quartermaster_builds_with_zero_findings_offline():
                   b"qmPlan", b"qmFingerprint"):
         assert b"   Name = %s\r\n" % state in core
     assert PREFIX + b"   Log('[qm] '+qmMsg);\r\n" in core
-    assert PREFIX + b"qmLog('boot version '+'0.1.8'+' hook='" in core
+    assert PREFIX + b"qmLog('boot version '+'0.1.9'+' hook='" in core
     # 0.1.0, the v0.1 beta (2026-09-30); 0.1.1 and 0.1.2, the first Workshop
     # updates, no change in behaviour (2026-10-02); 0.1.3, the guard judges the
     # mods switched on since the last start that booted (2026-10-03); 0.1.4, an
@@ -608,7 +610,7 @@ def test_quartermaster_builds_with_zero_findings_offline():
     # mod instead of 32, and the Options view's groups and search (2026-10-13);
     # 0.1.7, the restart after a mod changed with the game closed (2026-10-15);
     # 0.1.8, about.cfg load-order rules applied to the default order (2026-10-18)
-    assert hbuild.QM_VERSION == "0.1.8"
+    assert hbuild.QM_VERSION == "0.1.9"
     # Build variables arrive as literals: the S5 list, the hash constants.
     assert (b"'|gui\\menu.inc\\cameracontrol.inc|gui\\menu.inc\\doprogress.inc|"
             b"gui\\menu.inc\\eventmainmenu.inc|gui\\menu.inc\\initminimap.inc|"

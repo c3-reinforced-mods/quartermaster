@@ -226,6 +226,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zlib
 from dataclasses import dataclass, field
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -238,7 +239,7 @@ GAME = r"C:\Program Files (x86)\Steam\steamapps\common\Cossacks 3"
 LOCK_NAME = "swfp_game.lock"
 GAME_IMAGES = ("cossacks.exe", "modman.exe")
 
-QM_VERSION = "0.1.8"
+QM_VERSION = "0.1.9"
 
 IDX_REL = "data/quartermaster/vanilla.idx"
 IDX_FORMAT = 1
@@ -254,6 +255,7 @@ from ref import about as _about  # noqa: E402
 from ref import diff as _diff  # noqa: E402
 from ref import fingerprint as _fingerprint  # noqa: E402
 from ref import inc as _inc  # noqa: E402
+from ref import lang as _lang  # noqa: E402
 from ref import planner as _planner  # noqa: E402
 from ref import textio as _textio  # noqa: E402
 from ref import validate as _validate  # noqa: E402
@@ -272,6 +274,12 @@ HOOK_LINES_DIR = "data/quartermaster/hooks/"
 #: none, shipped as it is. A file with any problem stops the build.
 KNOWN_DIR = "data/quartermaster/known/"
 KNOWN_SRC = "known"
+#: Quartermaster's own texts in the languages of the family (ref/lang.py,
+#: docs/localisation.md): src/text/<code>.cfg in UTF-8, built into
+#: data/quartermaster/text/<code>.cfg in the code page of the language.
+#: English is the master and is not shipped: its text is the default of every
+#: qmText call in the code.
+TEXT_SRC = "text"
 #: The pre-compile guard of plan S17 (src/guard/resource.pas): the installed
 #: game's on-load script (resource.lib:88) with the guard's lines after it. The
 #: one file of the never-generate list Quartermaster ships - built here from
@@ -613,6 +621,107 @@ def qstr(text):
     return b"'" + data.replace(b"'", b"''") + b"'"
 
 
+# ----------------------------------------------------------- language texts
+#: `qmT('English text')` in a state, screen or helper is a text the player
+#: sees (docs/localisation.md, plan G19). The build turns it into a lookup in
+#: the parser qm_text that src/lib/qmtext.pas fills from the language file, and
+#: collects the English text under a key made of it. `qmT('Pending: %1 of %2',
+#: a, b)` replaces %1, %2 ... by the arguments, so a language can put them
+#: where its sentence needs them. The text is one string literal; a line break
+#: or a colour is added around the call, not inside it.
+TEXT_PARSER = "qm_text"
+#: `{key: English}` of every qmT the build has expanded, in this process.
+TEXTS = {}
+#: The keys of the texts written qmTL(...): a text a list or a button draws,
+#: which Core's wide-text path does not reach, so a language drawn from wide
+#: fonts reads English there (each file holds `l_<key>` for them).
+LISTTEXTS = set()
+_QMT = re.compile(rb"(?<![A-Za-z0-9_])qmT(L?)\(")
+_LITERAL = re.compile(rb"'((?:[^']|'')*)'\Z")
+
+
+def text_key(text):
+    """The key of an English text: `t_` and its words in lower case joined by
+    `_` (the prefix keeps a key clear of any name the parser itself uses); one
+    longer than 34 characters is cut and ends with a hash of the whole text.
+    A change of the English changes the key, so a translation of the old text
+    is missing, not wrong, until it is redone."""
+    slug = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    crc = "%06x" % (zlib.crc32(text.encode("ascii")) & 0xFFFFFF)
+    if not slug:
+        slug = crc
+    elif len(slug) > 34:
+        slug = slug[:26].rstrip("_") + "_" + crc
+    return "t_" + slug
+
+
+def _call_args(line, start):
+    """`(args, end)` of the call whose `(` stands just before `start`."""
+    depth, i, cur, quoted, args = 1, start, start, False, []
+    while i < len(line):
+        c = line[i:i + 1]
+        if quoted:
+            if c == b"'":
+                if line[i + 1:i + 2] == b"'":
+                    i += 1
+                else:
+                    quoted = False
+        elif c == b"'":
+            quoted = True
+        elif c in (b"(", b"["):
+            depth += 1
+        elif c in (b")", b"]"):
+            depth -= 1
+            if depth == 0:
+                args.append(line[cur:i])
+                return args, i + 1
+        elif c == b"," and depth == 1:
+            args.append(line[cur:i])
+            cur = i + 1
+        i += 1
+    raise BuildError("qmT( without its closing bracket")
+
+
+def expand_texts(line, where="?"):
+    """`line` with every qmT(...) replaced by the lookup it stands for."""
+    if line.lstrip().startswith(b"//"):
+        return line
+    out, pos = b"", 0
+    while True:
+        m = _QMT.search(line, pos)
+        if m is None:
+            return out + line[pos:]
+        args, end = _call_args(line, m.end())
+        args = [expand_texts(a.strip(), where) for a in args]
+        lit = _LITERAL.match(args[0])
+        if lit is None:
+            raise BuildError("%s: qmT takes one string literal first: %s"
+                             % (where, line.strip().decode("ascii", "replace")))
+        text = lit.group(1).replace(b"''", b"'").decode("ascii")
+        used = set(re.findall(r"%([1-9])", text))
+        if used != set(str(i) for i in range(1, len(args))):
+            raise BuildError("%s: qmT(%r) has %d argument(s) but its text holds %s"
+                             % (where, text, len(args) - 1,
+                                ", ".join("%" + u for u in sorted(used)) or "no %n"))
+        key = text_key(text)
+        if TEXTS.setdefault(key, text) != text:
+            raise BuildError("%s: the texts %r and %r make the same key %s"
+                             % (where, TEXTS[key], text, key))
+        if m.group(1):
+            LISTTEXTS.add(key)
+            key = "l_" + key[2:]
+        expr = (b"ParserGetValueByKeyByHandle(ParserSelectByKey(" + qstr(TEXT_PARSER)
+                + b"), " + qstr(key) + b")")
+        for i, arg in enumerate(args[1:], 1):
+            expr = b"StrReplace(" + expr + b", '%" + b"%d" % i + b"', " + arg + b")"
+        out += line[pos:m.start()] + expr
+        pos = end
+
+
+def uses_texts(lines):
+    return any(_QMT.search(l) for l in lines if not l.lstrip().startswith(b"//"))
+
+
 def _pipe_list(paths):
     """A Pascal literal `'|a|b|'`: membership is `StrPos('|'+x+'|', list)>0`."""
     return qstr("|" + "|".join(p.decode("ascii") for p in paths) + "|")
@@ -655,6 +764,11 @@ def build_variables(shipped_hooks=()):
         # order with Quartermaster (qmGuard's restart, ref/order.py needs_restart).
         "ownfiles": _pipe_list([_vanilla_rel(GUARD_FILE), b"quartermaster\\core.aix"]),
         "hookgen": qstr(HOOKGEN_PLACEHOLDER),
+        # the lookup tables of qmAboutLoc (ref/lang.py cp_table)
+        "cp1250tab": qstr(_lang.cp_table("cp1250")),
+        "cp1251tab": qstr(_lang.cp_table("cp1251")),
+        "cp1252tab": qstr(_lang.cp_table("cp1252")),
+        "cp1254tab": qstr(_lang.cp_table("cp1254")),
     }
 
 
@@ -781,18 +895,41 @@ def _vars_for(t, variables):
     return {k: variables[k] for k in t.requires if k in variables}
 
 
+def state_text_use(st, helpers, variables=None):
+    """`(helper names, loads the language)`: the helpers a state is built from,
+    in order - qmtext first when a text of the state or of a helper is
+    written qmT(...) and the state does not name it - and whether its body
+    starts with the call that loads the language."""
+    variables = BUILD_VARIABLES if variables is None else variables
+    names = resolve_helpers(st, helpers)
+    lines = []
+    for name in names:
+        h = helpers[name]
+        lines += render_lines(h, _vars_for(h, variables))
+    lines += render_lines(st, _vars_for(st, variables))
+    if not uses_texts(lines):
+        return names, False
+    if "qmtext" not in names:
+        names = ["qmtext"] + names
+    return names, True
+
+
 def state_code(st, helpers, variables=None):
     """The state's code lines: its helpers, then its own body."""
     variables = BUILD_VARIABLES if variables is None else variables
+    names, loads = state_text_use(st, helpers, variables)
     code = []
-    for name in resolve_helpers(st, helpers):
+    for name in names:
         h = helpers[name]
         code += render_lines(h, _vars_for(h, variables))
         code.append(b"")
     body = render_lines(st, _vars_for(st, variables))
     if not any(line.strip() for line in body):
         raise BuildError("%s: the state has no code" % st.path)
-    return code + body
+    if loads:
+        # the language file is loaded before the first text is looked up
+        body = [b"qmTextLoad;"] + body
+    return [expand_texts(l, st.path) for l in code + body]
 
 
 # -------------------------------------------------------------- containers
@@ -1311,6 +1448,11 @@ def lint_state(where, name, section, line_base=0, env=None, hook_lines=None,
     return out
 
 
+#: Where the language files go; they hold the code page of their language,
+#: not only printable ASCII.
+TEXT_OUT = "data/quartermaster/text/"
+
+
 def lint_file(rel, data):
     """Container findings for one emitted file."""
     out = []
@@ -1321,7 +1463,7 @@ def lint_file(rel, data):
         out.append(Finding("container", rel + ":1", "", "no final CRLF"))
     for i, line in enumerate(data.split(CRLF), 1):
         # A stray CR or LF is the first check's finding; report it once.
-        if any(not (32 <= c <= 126 or c in (9, 10, 13)) for c in line):
+        if not rel.startswith(TEXT_OUT) and any(not (32 <= c <= 126 or c in (9, 10, 13)) for c in line):
             out.append(Finding("container", "%s:%d" % (rel, i), "",
                                "byte outside printable ASCII"))
             break
@@ -1639,6 +1781,65 @@ def load_known(src_dir=SRC):
     return out
 
 
+def collect_english(src_dir=SRC):
+    """`{key: English}` of every qmT in the sources: each state and screen is
+    rendered once, which expands its texts."""
+    states, helpers = load_sources(src_dir)
+    variables = dict(BUILD_VARIABLES)
+    variables.setdefault("hookgen", b"''")
+    TEXTS.clear()
+    LISTTEXTS.clear()
+    for st in states:
+        state_code(st, helpers, variables)
+    return dict(TEXTS)
+
+
+def english_source(english):
+    """The bytes of src/text/en.cfg for `{key: English}`: sorted by key."""
+    return "".join("%s = %s\n" % kv for kv in sorted(english.items())).encode("utf-8")
+
+
+def load_texts(src_dir=SRC, english=None):
+    """`[(rel, bytes)]` of the language files, code order: English from the
+    code (`english`, else collected), the others from src/text. Empty while
+    the code has no qmT. A set of sources with any problem stops the build."""
+    from ref import lang as _lang
+    english = collect_english(src_dir) if english is None else english
+    if not english:
+        return []
+    folder = os.path.join(src_dir, TEXT_SRC)
+    sources = {"en": english_source(english)}
+    for fn in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+        code = fn[:-4]
+        if not fn.endswith(".cfg") or code not in _lang.CODES:
+            raise BuildError("src/text/%s: a text file is named <language code>.cfg "
+                             "(%s)" % (fn, ", ".join(_lang.CODES)))
+        with open(os.path.join(folder, fn), "rb") as fh:
+            data = fh.read()
+        if code == "en":
+            if data != sources["en"]:
+                raise BuildError("src/text/en.cfg is not what the code holds; "
+                                 "run python tools/qmtext.py --write")
+            continue
+        sources[code] = data
+    found = _lang.check(sources)
+    if found:
+        raise BuildError("src/text: %d problem(s): %s" % (
+            len(found), "; ".join("%s: %s" % f for f in found[:12])))
+    out = []
+    for code in _lang.CODES:
+        entries = _lang.parse(sources[code])[0]
+        have = dict(entries)
+        # the texts a list draws: the language's own, English where the language is
+        # drawn from wide fonts (a list cannot show those)
+        for key in sorted(LISTTEXTS):
+            if key in english:
+                text = english[key] if _lang.ENCODING[code] == "escaped" else have[key]
+                entries.append(("l_" + key[2:], text))
+        out.append((_lang.TEXT_DIR + code + ".cfg", _lang.encode(code, entries)))
+    return out
+
+
 def build(src_dir=SRC, game_dir=GAME, offline=False, with_vanilla_idx=False,
           variables=None):
     """Everything dist/Quartermaster should hold, in memory, plus the findings.
@@ -1675,6 +1876,8 @@ def build(src_dir=SRC, game_dir=GAME, offline=False, with_vanilla_idx=False,
         findings += found
         result.states.append(("(guard)", GUARD_FILE, guard.path))
 
+    TEXTS.clear()
+    LISTTEXTS.clear()
     targets = {}
     for st in states:
         targets.setdefault(st.into, []).append(st)
@@ -1699,6 +1902,9 @@ def build(src_dir=SRC, game_dir=GAME, offline=False, with_vanilla_idx=False,
                 findings += lint_state(into, st.name, section, base, env)
                 base += section.count(b"\n")
         outputs[into] = data
+
+    for rel, data in load_texts(src_dir, dict(TEXTS)):
+        outputs[rel] = data
 
     if with_vanilla_idx:
         entries = vanilla_entries(game_dir)

@@ -189,12 +189,12 @@ begin
    // Why a row is off after the start-up guard: a clash, or a step after a
    // start that stopped (no file).
    if (ParserGetValueByKeyByHandle(qmUmGlob, 'gdf'+IntToStr(qmUmK))='') then
-   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'switched off at start by Quartermaster: the start before did not reach the main menu')
+   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), qmT('switched off at start by Quartermaster: the start before did not reach the main menu'))
    else
    if (SubStr(ParserGetValueByKeyByHandle(qmUmGlob, 'gdwhy'), 1, 7)='failed-') then
-   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'switched off at start by Quartermaster: it replaces '+qmUmPath+', and so does '+ParserGetValueByKeyByHandle(qmUmGlob, 'gdo'+IntToStr(qmUmK))+', and the start before, with both, did not reach the main menu')
+   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), qmT('switched off at start by Quartermaster: it replaces %1, and so does %2, and the start before, with both, did not reach the main menu', qmUmPath, ParserGetValueByKeyByHandle(qmUmGlob, 'gdo'+IntToStr(qmUmK))))
    else
-   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'switched off at start by Quartermaster: it replaces '+qmUmPath+', and so does '+ParserGetValueByKeyByHandle(qmUmGlob, 'gdo'+IntToStr(qmUmK))+'; with both the game may not start. If they work together, activate it again');
+   ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), qmT('switched off at start by Quartermaster: it replaces %1, and so does %2; with both the game may not start. If they work together, activate it again', qmUmPath, ParserGetValueByKeyByHandle(qmUmGlob, 'gdo'+IntToStr(qmUmK))));
 end;
 for qmUmI:=0 to qmUmN-1 do
 if (ParserGetIntValueByKeyByHandle(qmUmUi, 'en'+IntToStr(qmUmI))=1) and (StrLength(qmUmGl[qmUmI])>1) then
@@ -215,7 +215,7 @@ begin
       ParserSetValueByKeyByHandle(qmUmUi, 'st'+IntToStr(qmUmI), 'WARN');
       ParserSetValueByKeyByHandle(qmUmUi, 'stsrc'+IntToStr(qmUmI), 'globals');
       // Why a row clashes.
-      ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), 'replaces '+qmUmPath+', and so does '+ParserGetValueByKeyByHandle(qmUmUi, 'name'+IntToStr(qmUmJ))+': only the later one''s copy loads. The game started with both; if one of them misbehaves, deactivate the other');
+      ParserSetValueByKeyByHandle(qmUmUi, 'why'+IntToStr(qmUmI), qmT('replaces %1, and so does %2: only the later one''s copy loads. The game started with both; if one of them misbehaves, deactivate the other', qmUmPath, ParserGetValueByKeyByHandle(qmUmUi, 'name'+IntToStr(qmUmJ))));
       qmUmClash := qmUmClash+1;
    end;
 end;
@@ -394,9 +394,9 @@ begin
          for qmUmAk:=0 to ParserGetIntValueByKeyByHandle(qmUmAb, 'pn'+qmUmAs)-1 do
          begin
             if (ParserGetValueByKeyByHandle(qmUmAb, 'pt'+qmUmAs+'_'+IntToStr(qmUmAk))='FAIL') and (qmUmAt='') then
-            qmUmAt := 'about.cfg: '+ParserGetValueByKeyByHandle(qmUmAb, 'px'+qmUmAs+'_'+IntToStr(qmUmAk));
+            qmUmAt := qmT('about.cfg: %1', ParserGetValueByKeyByHandle(qmUmAb, 'px'+qmUmAs+'_'+IntToStr(qmUmAk)));
             if (ParserGetValueByKeyByHandle(qmUmAb, 'pt'+qmUmAs+'_'+IntToStr(qmUmAk))='WARN') and (qmUmAx='') then
-            qmUmAx := 'about.cfg: '+ParserGetValueByKeyByHandle(qmUmAb, 'px'+qmUmAs+'_'+IntToStr(qmUmAk));
+            qmUmAx := qmT('about.cfg: %1', ParserGetValueByKeyByHandle(qmUmAb, 'px'+qmUmAs+'_'+IntToStr(qmUmAk)));
          end;
          if (qmUmAt<>'') then
          begin

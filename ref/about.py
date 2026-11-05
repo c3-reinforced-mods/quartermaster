@@ -35,6 +35,7 @@ setting it cannot use (dropped).
 """
 import re
 
+from ref import lang as _lang
 from ref import textio as T
 
 __all__ = ["FILE_NAME", "TYPES", "SLOTS", "SETTING_TYPES", "MAX_SETTINGS", "Setting",
@@ -80,6 +81,12 @@ LISTS = (b"exclusive", b"requires", b"loadafter", b"loadbefore", b"incompatiblew
          b"compatiblewith", b"extradirs", b"carries")
 REPEATED = (b"setting",)
 GROUP = b"group"
+#: Texts a mod declares for other languages (docs/localisation.md): `name.pl`,
+#: `group.pl = <title as declared>;<text>`, `label.pl = <setting id>;<text>`.
+#: The file is UTF-8; the rows of the language of the game are turned into what
+#: that language's screen takes (qmAboutLoc, ref/lang.py ENCODING).
+L10N_KEY = re.compile(rb"(name|group|label)\.([a-z]+)\Z")
+L10N_CODES = tuple(c.encode("ascii") for c in _lang.CODES)
 
 TAB = b"~009"
 BOM = b"~239~187~191"
@@ -158,6 +165,7 @@ class Setting(object):
         self.decimals = 0
         self.maxlen = 0
         self.group = b""
+        self.declared_group = b""   # the title as the `group` line gave it
 
     def __repr__(self):
         return "Setting(%r, %r, %r)" % (self.id, self.kind, self.default)
@@ -313,20 +321,24 @@ class About(object):
         self.extradirs = []
         self.settings = []
         self.problems = []
+        self.l10n = []              # [(line, key, value)] of the name./group./label. rows
 
     @property
     def fail(self):
         return any(p.tag == b"FAIL" for p in self.problems)
 
 
-def parse(data):
-    """About of the raw bytes of an about.cfg (None: no file)."""
+def parse(data, lang=None):
+    """About of the raw bytes of an about.cfg (None: no file). With `lang`, the
+    language of the game as a folder code (b"pl"), the rows that declare texts
+    for other languages are checked and those of `lang` applied; without it
+    they are skipped silently (the state that applies them is qmAboutLoc)."""
     if data is None:
         return About()
-    return parse_lines(T.read_lines(data))
+    return parse_lines(T.read_lines(data), lang)
 
 
-def parse_lines(lines):
+def parse_lines(lines, lang=None):
     a = About()
     a.present = True
     seen = set()
@@ -362,6 +374,8 @@ def parse_lines(lines):
             raw[key].append((group, value))
         elif key in LISTS:
             raw[key].append(value)
+        elif L10N_KEY.match(key):
+            a.l10n.append((n, key, value))
         else:
             a.problems.append(Problem(b"WARN", b"unknown",
                                       b"line %d: unknown key '%s'" % (n, key)))
@@ -447,8 +461,92 @@ def parse_lines(lines):
             continue
         ids.add(s.id)
         s.group = group
+        s.declared_group = group
         a.settings.append(s)
+    if lang is not None:
+        localise(a, lang)
     return a
+
+
+def l10n_text(value, code):
+    """The internal string of a UTF-8 text (internal form) for the screen of the
+    language `code`; None when the text is not UTF-8, or a character is one the
+    language's code page (or the wide path: the Basic Multilingual Plane)
+    cannot show."""
+    try:
+        text = T.unescape(value).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return None
+    enc = _lang.ENCODING[code.decode("ascii")]
+    if enc == "escaped":
+        out = []
+        for ch in text:
+            o = ord(ch)
+            if o > 0xFFFF:
+                return None
+            out.append(bytes([o]) if o < 128 and o != 92 else b"\\u%04X" % o)
+        raw = b"".join(out)
+    else:
+        try:
+            raw = text.encode("cp1252" if enc == "ascii" else enc)
+        except UnicodeEncodeError:
+            return None
+    return T.escape(raw)
+
+
+def localise(a, lang):
+    """The rows of a file that declare texts for other languages: each is
+    checked (WARN, appended to the problems in file order), and the ones for
+    `lang` replace the name, a group's title or a setting's label."""
+    declared = {s.id: s for s in a.settings}
+    for n, key, value in a.l10n:
+        base, _, code = key.partition(b".")
+        if code not in L10N_CODES:
+            a.problems.append(Problem(b"WARN", b"l10n-lang",
+                                      b"line %d: '%s' is not a language of Quartermaster" % (n, code)))
+            continue
+        target, text = b"", value
+        if base != b"name":
+            target, semi, text = value.partition(b";")
+            target, text = _strip(target), _strip(text)
+            if not semi or target == b"":
+                a.problems.append(Problem(b"WARN", b"l10n-fields",
+                                          b"line %d: %s needs <%s>;<text>" % (
+                                              n, key, b"setting id" if base == b"label" else b"group title")))
+                continue
+        if text == b"":
+            a.problems.append(Problem(b"WARN", b"l10n-fields", b"line %d: %s has no text" % (n, key)))
+            continue
+        hit = []
+        if base == b"label":
+            target = _lower(target)
+            hit = [declared[target]] if target in declared else []
+        elif base == b"group":
+            want = T.unescape(target)
+            hit = [s for s in a.settings if T.unescape(s.declared_group) == want]
+        if base != b"name" and not hit:
+            a.problems.append(Problem(b"WARN", b"l10n-target",
+                                      b"line %d: %s names %s '%s', which this file does not declare" % (
+                                          n, key, b"a setting" if base == b"label" else b"a group", target)))
+            continue
+        if code != lang:
+            continue
+        if _lang.ENCODING[code.decode("ascii")] == "escaped" and base != b"label":
+            # a name and a group's title stand in lists, which the wide-text
+            # path does not reach: they stay as declared in these languages
+            continue
+        done = l10n_text(text, code)
+        if done is None:
+            a.problems.append(Problem(b"WARN", b"l10n-chars",
+                                      b"line %d: %s holds a character this language cannot show; the declared text stays" % (n, key)))
+            continue
+        if base == b"name":
+            a.name = done
+        elif base == b"label":
+            hit[0].label = done
+        else:
+            for s in hit:
+                s.group = done
 
 
 def option_rows(settings, page=ROWS_A_PAGE, shown=None, titles=True):

@@ -53,6 +53,8 @@ except the list keys and `setting`, whose values add up.
 | `setting` | a setting (below), repeatable, at most 1000 (32 until 0.1.5) | WARN, dropped |
 | `group` | a title for the settings after it (below; since 0.1.6) | WARN, ignored |
 
+| `name.<code>`, `group.<code>`, `label.<code>` | the texts of the mod in another language (since 0.1.9; below and [localisation.md](localisation.md)) | WARN, ignored |
+
 Any other key is a WARN (so an older Quartermaster, which does not know
 `carries`, shows one WARN line for it in the report and ignores the key; nothing
 else changes). A FAIL marks the mod FAIL in the window and in the
@@ -284,6 +286,38 @@ own rule for a key that works everywhere, `hotkeysettings.inc:210-216` - or a sh
 (`registershortcuts.inc`) already use it, or when another key setting of this
 mod or of another active mod has it. The setting's own default is always
 allowed.
+
+### Texts in other languages
+
+Quartermaster speaks the language of the game (the eleven of the game and, with
+Reinforced - Core, Hungarian, Dutch, Chinese, Japanese and Korean). Your mod's
+own name, group titles and setting labels can follow it. Write the English ones
+as always, and add a row for each language you translate; the codes are those of
+the folders under `data\locale` (`cs de en es fr it pl po ru tu uk hu nl zh ja ko`):
+
+```
+name = WASD camera
+name.pl = Kamera WASD
+group = Camera keys
+group.pl = Camera keys;Klawisze kamery
+setting = camera_left;key;A;Camera left
+label.pl = camera_left;Kamera w lewo
+```
+
+- `name.<code> = <text>`; `group.<code> = <the title as the group line gives it>;<text>`
+  (it translates every setting under that title); `label.<code> = <setting id>;<text>`.
+- Write the file in **UTF-8**, as any editor does by default. Quartermaster turns the text into
+  what the language's screen can show; a character that language does not have
+  (a Chinese character in `pl`) is a WARN and the English text stays.
+- A language you give no row for shows the English text. A row for a setting or
+  group the file does not declare, a row without its text, and an unknown language code
+  are WARNs in the report and change nothing. The last row for the same thing counts.
+- In Chinese, Japanese and Korean only `label` rows are used for now (names and
+  group titles stand in lists that cannot draw those characters yet).
+- Setting ids and stored values do not depend on the language. The options of a
+  `choice` setting are their own stored values and are not translated.
+- Say `quartermaster = 0.1.9` if the translations matter to you; an older
+  Quartermaster shows one WARN per row and the English texts.
 
 ### Reading a setting
 

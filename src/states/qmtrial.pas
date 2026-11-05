@@ -172,7 +172,7 @@ ParserSetIntValueByKeyByHandle(qmTrUi, 'trrow', qmTrRow);
 if (qmTrMods=0) or (qmTrCore=0) or (qmTrN<1) or (qmTrN>256) or (ParserGetIntValueByKeyByHandle(qmTrMods, 'n')<>qmTrN) then
 begin
    qmTrOk := False;
-   qmTrWhy := 'the mod list is not the one this start loaded';
+   qmTrWhy := qmT('the mod list is not the one this start loaded');
 end
 else
 begin
@@ -184,7 +184,7 @@ begin
       if (qmTrA<>qmTrB) then
       begin
          qmTrOk := False;
-         qmTrWhy := 'the mod list is not the one this start loaded';
+         qmTrWhy := qmT('the mod list is not the one this start loaded');
       end;
    end;
 end;
@@ -265,7 +265,7 @@ qmTrG := ParserSelectByKey('qm_gen');
 var qmTrPlan : Integer = ParserSelectByKey('qm_plan');
 var qmTrPn : Integer = ParserGetIntValueByKeyByHandle(qmTrPlan, 'n');
 if (qmTrG=0) or (ParserGetValueByKeyByHandle(qmTrG, 'status')='') then
-qmTrAdd('WARN', 'the trial generation did not run')
+qmTrAdd('WARN', qmT('the trial generation did not run'))
 else
 for qmTrM:=0 to qmTrPn-1 do
 begin
@@ -291,16 +291,16 @@ begin
          //! was off (hands-on, 2026-10-10: Reinforced - Core refused twice,
          //! "gui\menu.inc\doprogress.inc: the merged file does not compile").
          if (qmTrTouches(ParserGetValueByKeyByHandle(qmTrPlan, 'prov'+IntToStr(qmTrM)), 1)=1) then
-         qmTrAdd('LATER', qmTrP+' does not compile merged with the global scripts loaded now; a mod in it brings its own, so it is built again at the next start')
+         qmTrAdd('LATER', qmT('%1 does not compile merged with the global scripts loaded now; a mod in it brings its own, so it is built again at the next start', qmTrP))
          else
          if (qmTrX='fallback') then
-         qmTrAdd('FAIL', qmTrP+': the merged file does not compile')
+         qmTrAdd('FAIL', qmT('%1: the merged file does not compile', qmTrP))
          else
-         qmTrAdd('FAIL', qmTrP+': no version of the file compiles');
+         qmTrAdd('FAIL', qmT('%1: no version of the file compiles', qmTrP));
       end
       else
       if (qmTrT='WARN') then
-      qmTrAdd('WARN', qmTrP+' is merged with a warning; the report after Apply shows the details');
+      qmTrAdd('WARN', qmT('%1 is merged with a warning; the report after Apply shows the details', qmTrP));
    end;
    //! An .inc an involved row brings alone, or wins with: loaded as it is.
    if (qmTrA='skip') or (qmTrA='winner') then
@@ -330,7 +330,7 @@ begin
       while (qmTrB<>'') do
       begin
          if (qmTrB='lib\classes.script') then
-         qmTrAdd('LATER', 'scripts\lib\classes.script is not checked: a running game cannot compile it')
+         qmTrAdd('LATER', qmT('%1 is not checked: a running game cannot compile it', 'scripts\lib\classes.script'))
          else
          if (SubStr(qmTrB, 1, 4)='lib\') then
          qmTrOwn(qmTrI, 'scripts\'+qmTrB, 1);
@@ -345,12 +345,12 @@ begin
       qmTrH := ParserCreate('qm_traix');
       ParserClearByHandle(qmTrH);
       if (not ParserLoadFromFileByHandle(qmTrH, qmTrApp+qmTrD+'\data\gui\menu.aix')) then
-      qmTrAdd('FAIL', 'gui\menu.aix does not load: the game would not start');
+      qmTrAdd('FAIL', qmT('%1 does not load: the game would not start', 'gui\menu.aix'));
       ParserClearByHandle(qmTrH);
    end;
 end;
 if (qmTrDrop>0) then
-qmTrAdd('WARN', IntToStr(qmTrDrop)+' more of its own files were not checked: at most 512 in one check');
+qmTrAdd('WARN', qmT('%1 more of its own files were not checked: at most 512 in one check', IntToStr(qmTrDrop)));
 //! The own files through the validator.
 if (qmTrVn>0) then
 begin
@@ -369,17 +369,17 @@ begin
    begin
       qmField(ParserGetValueByKeyByHandle(qmTrV, 'vr'+IntToStr(qmTrK)), '|', 2, qmTrA);
       if (qmTrA='0') and (qmTrVs[qmTrK]=1) then
-      qmTrAdd('LATER', qmTrVrel[qmTrK]+' does not compile with the global scripts loaded now; if the mod does not bring what it needs, the game will not start')
+      qmTrAdd('LATER', qmT('%1 does not compile with the global scripts loaded now; if the mod does not bring what it needs, the game will not start', qmTrVrel[qmTrK]))
       else
       if (qmTrA='0') then
       begin
          if (qmTrLib[qmTrVrow[qmTrK]]=1) then
-         qmTrAdd('LATER', qmTrVrel[qmTrK]+' does not compile with the global scripts loaded now; the mod brings its own, so this is not certain')
+         qmTrAdd('LATER', qmT('%1 does not compile with the global scripts loaded now; the mod brings its own, so this is not certain', qmTrVrel[qmTrK]))
          else
-         qmTrAdd('FAIL', qmTrVrel[qmTrK]+' does not compile');
+         qmTrAdd('FAIL', qmT('%1 does not compile', qmTrVrel[qmTrK]));
       end;
       if (qmTrA='-1') then
-      qmTrAdd('WARN', qmTrVrel[qmTrK]+' could not be read');
+      qmTrAdd('WARN', qmT('%1 could not be read', qmTrVrel[qmTrK]));
    end;
 end;
 //! Its key settings (M8 task 4): the key each holds - its stored value, or
@@ -423,7 +423,7 @@ begin
             qmTrA := IntToStr(qmTrI)+'_'+IntToStr(qmTrX2);
             if (ParserGetValueByKeyByHandle(qmTrAb, 'sty'+qmTrA)='key') then
             if SameText(ParserGetValueByKeyByHandle(qmTrCi, ParserGetValueByKeyByHandle(qmTrAb, 'sid'+qmTrA)), qmTrKey) then
-            qmTrAdd('WARN', 'key '+qmTrKey+': '+ParserGetValueByKeyByHandle(qmTrAb, 'slb'+qmTrKs)+' and '+ParserGetValueByKeyByHandle(qmTrAb, 'slb'+qmTrA)+' of '+ParserGetValueByKeyByHandle(qmTrUi, 'name'+IntToStr(qmTrI)));
+            qmTrAdd('WARN', qmT('key %1: %2 and %3 of %4', qmTrKey, ParserGetValueByKeyByHandle(qmTrAb, 'slb'+qmTrKs), ParserGetValueByKeyByHandle(qmTrAb, 'slb'+qmTrA), ParserGetValueByKeyByHandle(qmTrUi, 'name'+IntToStr(qmTrI))));
          end;
          for qmTrJ:=0 to qmTrN-1 do
          if (qmTrJ<>qmTrI) and (ParserGetIntValueByKeyByHandle(qmTrUi, 'pe'+IntToStr(qmTrJ))=1) and (ParserGetIntValueByKeyByHandle(qmTrUi, 'abs'+IntToStr(qmTrJ))>0) and ((qmTrInv[qmTrJ]=0) or (qmTrJ>qmTrI)) then
@@ -435,7 +435,7 @@ begin
                qmTrA := IntToStr(qmTrJ)+'_'+IntToStr(qmTrM);
                if (ParserGetValueByKeyByHandle(qmTrAb, 'sty'+qmTrA)='key') then
                if SameText(ParserGetValueByKeyByHandle(qmTrCj, ParserGetValueByKeyByHandle(qmTrAb, 'sid'+qmTrA)), qmTrKey) then
-               qmTrAdd('WARN', 'key '+qmTrKey+': '+qmTrLb+' and '+ParserGetValueByKeyByHandle(qmTrAb, 'slb'+qmTrA)+' of '+ParserGetValueByKeyByHandle(qmTrUi, 'name'+IntToStr(qmTrJ)));
+               qmTrAdd('WARN', qmT('key %1: %2 and %3 of %4', qmTrKey, qmTrLb, ParserGetValueByKeyByHandle(qmTrAb, 'slb'+qmTrA), ParserGetValueByKeyByHandle(qmTrUi, 'name'+IntToStr(qmTrJ))));
             end;
          end;
          //! The game's rules, but for the setting's own default.
@@ -445,7 +445,7 @@ begin
             if (qmTrGame='') then
             qmKeyGameUse(qmTrKey, qmTrGame);
             if (qmTrGame<>'') then
-            qmTrAdd('WARN', 'key '+qmTrKey+': '+qmTrLb+' - '+qmTrGame);
+            qmTrAdd('WARN', qmT('key %1: %2 - %3', qmTrKey, qmTrLb, qmTrGame));
          end;
       end;
    end;
@@ -491,7 +491,7 @@ begin
       end;
       qmTrTit := ParserGetValueByKeyByHandle(qmTrUi, 'name'+IntToStr(qmTrI));
       if (ParserGetIntValueByKeyByHandle(qmTrMv, 'done')<>1) then
-      qmTrAdd('WARN', 'the own check of '+qmTrTit+' did not run to its end')
+      qmTrAdd('WARN', qmT('the own check of %1 did not run to its end', qmTrTit))
       else
       for qmTrK:=0 to ParserGetIntValueByKeyByHandle(qmTrMv, 'pn')-1 do
       begin

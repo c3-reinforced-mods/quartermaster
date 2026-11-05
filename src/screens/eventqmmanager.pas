@@ -88,7 +88,7 @@ begin
    ParserSetIntValueByKeyByHandle(qmEmUi, 'rename', 0);
    var qmEmBtn : Integer = GetGUIElementIndexByNameParent('MainMenu.col1.row1.wnewgame.bmodman.txtbtn', _gui_GetTop);
    // The main menu button's caption.
-   var qmEmCap : String = 'Mod Manager';
+   var qmEmCap : String = qmTL('Mod Manager');
    if (qmEmBtn<>0) then
    begin
       var qmEmCapW : Integer = _gui_GetFontTextWidth(qmEmCap, gc_font_serif_15);
