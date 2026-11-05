@@ -96,8 +96,13 @@ var qmTkUi : Integer = ParserSelectByKey('qm_ui');
 var qmTkGui : Integer = qmTkUi;
 if (qmTkPump) then
 qmTkGui := 0;
+//! The button keeps the game's own caption where the language is drawn from wide
+//! fonts (zh, ja, ko): the English "Mod Manager" ran out of the button there
+//! (hands-on, 2026-11-05), and a wide text reads back empty, so it could not be checked.
+var qmTkLg : String;
+qmLang(qmTkLg);
 if (qmTkGui<>0) then
-if (ParserGetIntValueByKeyByHandle(qmTkUi, 'ready')=1) and (ParserGetIntValueByKeyByHandle(qmTkUi, 'renameoff')=0) then
+if (ParserGetIntValueByKeyByHandle(qmTkUi, 'ready')=1) and (ParserGetIntValueByKeyByHandle(qmTkUi, 'renameoff')=0) and (StrPos(','+qmTkLg+',', ',zh,ja,ko,')=0) then
 begin
    var qmTkBtn : Integer = GetGUIElementIndexByNameParent('MainMenu.col1.row1.wnewgame.bmodman.txtbtn', _gui_GetTop);
    // The main menu button's caption (EventQmManager sets it).

@@ -15,7 +15,7 @@ requires:
 //!
 //! qmLang      the two-letter folder of the game's tables
 //!             (.\data\locale\pl\table.lng is pl), en when there is none
-//! qmTextLoad  the language's file into qm_text, once
+//! qmTextLoad  the language's file into qm_text, again when the language changed
 //!
 //! A routine that makes a String hands it back through its last, var
 //! parameter (src/lib/qmstr.pas), and keeps its own parameter and local names.
@@ -30,15 +30,30 @@ end;
 
 procedure qmTextLoad;
 begin
-   if (ParserSelectByKey('qm_text')=0) then
+   var qmTlLang : String;
+   var qmTlP : Integer = ParserSelectByKey('qm_text');
+   var qmTlOk : Boolean = False;
+   var qmTlLoad : Boolean = False;
+   qmLang(qmTlLang);
+   if (qmTlP=0) then
    begin
-      var qmTlP : Integer = ParserCreate('qm_text');
-      var qmTlLang : String;
-      qmLang(qmTlLang);
-      var qmTlOk : Boolean = False;
+      qmTlP := ParserCreate('qm_text');
+      qmTlLoad := True;
+   end
+   else
+   if (ParserGetValueByKeyByHandle(qmTlP, 'qmlang')<>qmTlLang) then
+   begin
+      //! The language of the game changed under a running game (Settings applies
+      //! a pick at once): the texts read so far are in the old code page.
+      ParserClearByHandle(qmTlP);
+      qmTlLoad := True;
+   end;
+   if (qmTlLoad) then
+   begin
       if (StrPos(','+qmTlLang+',', ',cs,de,es,fr,it,pl,po,ru,tu,uk,hu,nl,zh,ja,ko,')>0) then
       qmTlOk := ParserLoadFromFileByHandle(qmTlP, '.\data\quartermaster\text\'+qmTlLang+'.cfg');
       if (not qmTlOk) then
       ParserLoadFromFileByHandle(qmTlP, '.\data\quartermaster\text\en.cfg');
+      ParserSetValueByKeyByHandle(qmTlP, 'qmlang', qmTlLang);
    end;
 end;

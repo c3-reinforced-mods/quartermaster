@@ -48,3 +48,17 @@ def test_a_text_with_places_takes_its_numbers_where_the_language_puts_them(monke
     text = " ".join(t.text.decode("cp1250") for t in eng.els.values() if t.kind == "text")
     assert "mod" in text
 
+
+
+def test_a_language_picked_in_the_running_game_is_read_at_once(monkeypatch):
+    # Settings applies a pick without a restart: the parser that holds the texts must follow it,
+    # or the window keeps the old language in the old code page (seen in the game, 2026-11-05)
+    monkeypatch.setattr(S.Screen, "locale", b"pl")
+    eng = S.show(S.model(S.ROWS))
+    assert {n: c for n, (c, _e) in S.buttons(eng).items()}[b"bapply"] == b"Zastosuj"
+    eng.locale = b"de"
+    eng.states["showqmmanager"].run()
+    assert {n: c for n, (c, _e) in S.buttons(eng).items()}[b"bapply"] == b"Anwenden"
+    eng.locale = b"zh"
+    eng.states["showqmmanager"].run()
+    assert {n: c for n, (c, _e) in S.buttons(eng).items()}[b"bapply"] == b"\\u5E94\\u7528"

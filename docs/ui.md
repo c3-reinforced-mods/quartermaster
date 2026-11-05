@@ -955,3 +955,7 @@ left for `qmTick` - the I9 run through the window (`m6cases.py case --i9`,
 - Main menu: Quartermaster's version one line under the game's in the
   bottom-right corner (see "Version in the main menu");
   `[qm] ui version line: made, vers=<n> stack=<k> y=<y> off=<0|1>`.
+
+## Texts in the language of the game
+
+Every text of the window comes from the named parser `qm_text`, filled by `qmTextLoad` from `data/quartermaster/text/<code>.cfg` of the language the game has now: its key `qmlang` holds that code, and a language picked in Settings under a running game (the game applies a pick at once) makes the next state that draws a text load the file again. The keys, the files and the checks are in [localisation.md](localisation.md).

@@ -211,3 +211,24 @@ def test_the_list_form_of_the_macro_looks_up_the_list_key():
     assert out.endswith(b"'qm_text'), 'l_general');") and "t_general" in hbuild.TEXTS
     hbuild.TEXTS.clear()
     hbuild.LISTTEXTS.clear()
+
+
+def test_a_button_label_fits_its_button():
+    # a Polish "Sortuj automatycznie" (20) ran over its button in the game, "Otworz Warsztat" (15) just fits;
+    # a CJK glyph is about 3 Latin letters wide (zh, ja, ko in the game, 2026-11-05)
+    import re
+    src = open(os.path.join(hbuild.SRC, "screens", "showqmmanager.pas"), "rb").read().decode("ascii")
+    keys = {"t_type_mod", "t_slot_1"}      # the captions of the type and slot buttons of New mod
+    for m in re.finditer(r"qmSmButton\(.*", src):
+        for t in re.findall(r"qmT\('((?:[^']|'')*)'\)", m.group(0)):
+            keys.add(hbuild.text_key(t.replace("''", "'")))
+    assert len(keys) > 15
+    too_long = []
+    for code in lang.CODES[1:]:
+        with open(os.path.join(SRC_TEXT, code + ".cfg"), "rb") as fh:
+            have = dict(lang.parse(fh.read())[0])
+        for k in sorted(keys):
+            width = sum(3.0 if ord(ch) > 0x2E80 else 1 for ch in have[k].replace("%1", "none"))
+            if width > 15:
+                too_long.append((code, k, have[k]))
+    assert too_long == []
