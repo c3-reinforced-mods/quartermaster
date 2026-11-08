@@ -39,7 +39,8 @@ LABEL = "qm-lang-tour"
 STATES = []
 
 # Quartermaster's candidate and LAN from the Workshop, and the patch (last: UPATCH_FAMILY=core takes the last)
-scenario.FAMILY = (scenario.WORKSHOP + "3812736237", "mods\\Quartermaster", "mods\\" + build.MOD_NAME)
+NO_QM = bool(os.environ.get("QM_TOUR_NOQM"))        # without Quartermaster: the menu as the game and Core draw it
+scenario.FAMILY = (scenario.WORKSHOP + "3812736237",) + (() if NO_QM else ("mods\\Quartermaster",)) + ("mods\\" + build.MOD_NAME,)
 
 
 WIDE = ("zh", "ja", "ko")                 # drawn from wide fonts: read from resource.lib at the start of the game only
@@ -113,6 +114,8 @@ def views(r, code):
     ev = {}
     QS.to_main_menu(r)
     pathrun.full(r, "%s-0-menu" % code)
+    if NO_QM:
+        return
     QS.open_window(r, ev)
     r.sleep(1.0)
     to_panel(r, ev, "breport", 0)
