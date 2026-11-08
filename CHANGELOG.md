@@ -1,6 +1,6 @@
 # Changes
 
-## 0.1.9 (2026-11-05)
+## 0.1.9 (2026-11-08)
 
 - Quartermaster speaks your language: the manager window, its messages and the button it puts in the main menu follow the language of the game. English, Czech, German, Spanish, French, Italian, Polish, Portuguese, Russian, Turkish and Ukrainian, and with Reinforced - Core also Hungarian, Dutch, Chinese, Japanese and Korean. A text without a translation reads English.
 - Not translated: the report (`report.txt`, `conflicts.txt`) and the game log. In Chinese, Japanese and Korean the menu button still reads English.
