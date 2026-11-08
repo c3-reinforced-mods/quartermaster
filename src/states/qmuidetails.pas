@@ -47,7 +47,7 @@ begin
    qmUdLine := qmUdLine+qmT('inactive: %1', ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS))
    else
    if (qmUdEn=0) then
-   qmUdLine := qmUdLine+'inactive'
+   qmUdLine := qmUdLine+qmT('inactive')
    else
    if (qmUdSrc='globals') then
    qmUdLine := qmUdLine+'FAIL: '+ParserGetValueByKeyByHandle(qmUdUi, 'why'+qmUdS)
